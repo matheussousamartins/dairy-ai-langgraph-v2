@@ -50,6 +50,7 @@ Adaptações em relação ao original:
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional
 import os
+import hashlib
 
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_core.tools import tool
@@ -73,6 +74,21 @@ try:
 except ValueError:
     _hybrid_workers = 8
 _hybrid_executor = ThreadPoolExecutor(max_workers=max(2, _hybrid_workers))
+
+
+def _rrf_key(item: Dict[str, Any]) -> str:
+    """Gera chave estável para deduplicação no RRF.
+
+    Evita colisões ao usar apenas prefixo de conteúdo (que pode repetir
+    em documentos parecidos), situação comum em bases normativas/técnicas.
+    """
+    metadata = item.get("metadata") or {}
+    if isinstance(metadata, dict):
+        for key in ("id", "chunk_id", "source", "doc_id", "path"):
+            value = metadata.get(key)
+            if value:
+                return f"{key}:{value}:{hashlib.md5(item.get('content', '').encode('utf-8')).hexdigest()}"
+    return hashlib.md5(item.get("content", "").encode("utf-8")).hexdigest()
 
 
 # ============================================================
@@ -383,7 +399,7 @@ def search_hybrid_rrf(
     
     # Adiciona resultados da busca vetorial
     for rank, item in enumerate(vector_results, start=1):
-        key = item["content"][:200]  # Usa os primeiros 200 chars como chave
+        key = _rrf_key(item)
         if key not in rrf_map:
             rrf_map[key] = {
                 "content": item["content"],
@@ -396,7 +412,7 @@ def search_hybrid_rrf(
     
     # Adiciona resultados da busca textual
     for rank, item in enumerate(text_results, start=1):
-        key = item["content"][:200]
+        key = _rrf_key(item)
         if key not in rrf_map:
             rrf_map[key] = {
                 "content": item["content"],

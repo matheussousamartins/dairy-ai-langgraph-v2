@@ -64,6 +64,11 @@ _DAIRY_TERMS = {
     "iogurte", "fermentado", "ricota", "requeijao", "mussarela",
     "coalhada", "soro", "pasteurizacao", "ccs", "cbt", "rtiq", "rdc",
 }
+_QUALITY_LAB_TERMS = {
+    "laboratorio", "analise", "analitico", "amostra", "coleta",
+    "controle de qualidade", "qualidade", "bpl", "boas praticas",
+    "incendio", "emergencia", "evacuacao", "extintor", "epi", "brigada",
+}
 
 
 def _normalize_text(text: str) -> str:
@@ -143,6 +148,11 @@ def _rule_based_route(user_text: str) -> Optional[List[int]]:
 
     if _looks_like_greeting_only(text):
         return []
+
+    # Perguntas de laboratorio/controle de qualidade (inclui seguranca em lab)
+    # devem consultar Qualidade do Leite mesmo sem termos "dairy" explicitos.
+    if any(term in text for term in _QUALITY_LAB_TERMS):
+        return [0, 3, 4]
 
     specialist_scores: List[tuple[int, int]] = []
     for aid, keywords in _SPECIALIST_KEYWORDS.items():
@@ -287,7 +297,8 @@ async def classify(state: OrchestratorState) -> OrchestratorState:
     if ORCHESTRATOR_FASTPATH:
         fast_ids = _rule_based_route(route_text)
         if fast_ids is not None:
-            _cache_set(cache_key, fast_ids)
+            if fast_ids:
+                _cache_set(cache_key, fast_ids)
             return _build_classification_state(fast_ids)
 
     system_prompt = get_orchestrator_prompt()
@@ -329,7 +340,6 @@ FORMATO DA RESPOSTA:
             agent_ids.append(aid)
 
     if not agent_ids:
-        _cache_set(cache_key, [])
         return _build_classification_state([])
 
     _cache_set(cache_key, agent_ids)
@@ -419,11 +429,12 @@ async def respond_direct(state: OrchestratorState) -> OrchestratorState:
     user_text = _get_last_user_text(state.get("messages", []))
 
     system = (
-        "Você é o assistente geral do DairyApp AI, especializado em tecnologia "
-        "de laticínios. Responda de forma amigável. Quando pertinente, sugira que "
-        "o usuário faça perguntas técnicas sobre queijos, fermentados, regulatórios, "
-        "qualidade do leite, diagnóstico de defeitos ou formulação. "
-        "Responda em português brasileiro."
+        "Voce e o assistente geral do Dairy AI (DairyApp), especializado em tecnologia "
+        "de laticinios. Em saudacoes e primeira interacao, apresente-se de forma curta "
+        "como Dairy AI e diga em uma frase como pode ajudar. Depois disso, evite repetir "
+        "apresentacoes e va direto ao ponto. Quando pertinente, sugira perguntas tecnicas "
+        "sobre queijos, fermentados, regulatorios, qualidade do leite, diagnostico de "
+        "defeitos ou formulacao. Responda em portugues brasileiro."
     )
 
     response = await _get_direct_model().ainvoke([

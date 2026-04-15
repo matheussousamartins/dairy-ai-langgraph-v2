@@ -163,8 +163,15 @@ AGENTS: List[Dict[str, Any]] = [
             "leite", "qualidade", "CCS", "CBT", "acidez", "crioscopia",
             "gordura", "proteína", "fraude", "aguagem", "neutralizante",
             "conservante", "análise", "Dornic", "alizarol", "densidade",
+            "laboratório", "amostra", "controle de qualidade", "BPL",
+            "segurança", "incêndio", "emergência", "evacuação", "EPI",
         ],
-        "search_config": {},
+        "search_config": {
+            # Base 4 costuma ter conteúdo heterogêneo (métodos + boas práticas).
+            # Híbrido tende a recuperar melhor termos técnicos e operacionais.
+            "search_type": "hybrid_rrf",
+            "k": 7,
+        },
     },
     {
         "agent_id": 5,
