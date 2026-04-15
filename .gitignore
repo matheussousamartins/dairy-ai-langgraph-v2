@@ -1,0 +1,29 @@
+# Variáveis de ambiente (NUNCA commitar)
+.env
+.env.local
+.env*.local
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+pytest-cache-files-*
+*.egg-info/
+dist/
+build/
+*.log
+
+# Next.js / Node
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.env
+frontend/.env.local
+frontend/.env*.local
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,27 @@
+# Catálogo de modelos OpenRouter usados pelo TopHawks Genesis
+# Valores de custo são exemplos (USD por 1M tokens). Ajuste conforme necessário.
+- id: x-ai/grok-4.1-fast
+  label: Grok 4.1 Fast
+  input_cost: 0.00
+  output_cost: 0.00
+- id: google/gemini-2.5-flash
+  label: Gemini 2.5 Flash
+  input_cost: 0.30
+  output_cost: 2.50
+- id: x-ai/grok-4-fast
+  label: Grok 4 Fast
+  input_cost: 0.20
+  output_cost: 0.50
+- id: moonshotai/kimi-k2-thinking
+  label: Kimi K2 Thinking
+  input_cost: 0.60
+  output_cost: 2.50
+- id: minimax/minimax-m2
+  label: Minimax M2
+  input_cost: 0.25
+  output_cost: 1.02
+- id: anthropic/claude-haiku-4.5
+  label: Claude Haiku 4.5
+  input_cost: 1.00
+  output_cost: 5.00
+

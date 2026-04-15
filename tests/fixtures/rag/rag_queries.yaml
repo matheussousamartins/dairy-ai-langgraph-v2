@@ -1,0 +1,440 @@
+# ============================================================
+# rag_queries.yaml — Dataset de avaliação RAG (agentes com base ativa)
+#
+# Escopo atual:
+# - Agente 0 (base geral)
+# - Agente 3 (regulatórios)
+# - Agente 4 (qualidade do leite)
+#
+# Total mínimo: 20 perguntas por agente.
+# ============================================================
+
+queries:
+  # ============================================================
+  # AGENTE 0 — Base Geral Dairy
+  # ============================================================
+  - agent_id: 0
+    table_name: embeddings_agente_0_base_geral
+    group: base_geral
+    pergunta: No glossário de vocês, "Starter" significa o quê?
+    expected_all: ["Starter", "Fermento"]
+    answer: "No glossário, Starter corresponde a Fermento."
+
+  - agent_id: 0
+    table_name: embeddings_agente_0_base_geral
+    group: base_geral
+    pergunta: Quando alguém fala "Phage", qual é o termo padrão?
+    expected_all: ["Phage", "Bacteriófagos"]
+    answer: "No padrão da base, Phage é substituído por Bacteriófagos (ou Fagos)."
+
+  - agent_id: 0
+    table_name: embeddings_agente_0_base_geral
+    group: base_geral
+    pergunta: '"Phage Attack" deve ser escrito como?'
+    expected_all: ["Phage Attack", "Ataque fágico"]
+    answer: "O termo padronizado é Ataque fágico."
+
+  - agent_id: 0
+    table_name: embeddings_agente_0_base_geral
+    group: base_geral
+    pergunta: No padrão interno, "Rennet" vira qual palavra?
+    expected_all: ["Rennet", "Coagulante"]
+    answer: "Rennet é padronizado como Coagulante."
+
+  - agent_id: 0
+    table_name: embeddings_agente_0_base_geral
+    group: base_geral
+    pergunta: '"Feeling" no material técnico de vocês significa o quê?'
+    expected_all: ["Feeling", "Enchimento"]
+    answer: "No glossário, Feeling é substituído por Enchimento."
+
+  - agent_id: 0
+    table_name: embeddings_agente_0_base_geral
+    group: base_geral
+    pergunta: A sigla PAA corresponde a qual composto?
+    expected_all: ["PAA", "Ácido Peracético"]
+    answer: "PAA corresponde a Ácido Peracético."
+
+  - agent_id: 0
+    table_name: embeddings_agente_0_base_geral
+    group: base_geral
+    pergunta: O termo "Endogenous" no glossário deve virar qual termo em português?
+    expected_all: ["Endogenous", "Endógeno"]
+    answer: "O termo padronizado é Endógeno."
+
+  - agent_id: 0
+    table_name: embeddings_agente_0_base_geral
+    group: base_geral
+    pergunta: '"Bactérias iniciadoras" equivale a qual expressão padrão?'
+    expected_all: ["Bactérias iniciadoras", "Bactérias do fermento"]
+    answer: "No glossário, Bactérias iniciadoras é substituído por Bactérias do fermento."
+
+  - agent_id: 0
+    table_name: embeddings_agente_0_base_geral
+    group: base_geral
+    pergunta: No material oficial, "Nisin" deve ser chamado de como?
+    expected_all: ["Nisin", "Nisina"]
+    answer: "A forma padronizada é Nisina."
+
+  - agent_id: 0
+    table_name: embeddings_agente_0_base_geral
+    group: base_geral
+    pergunta: Brássicas e Forrageiras são tratados como equivalentes na base?
+    expected_all: ["Brássicas", "Forrageiras"]
+    answer: "No glossário, Brássicas é substituído por Forrageiras."
+
+  - agent_id: 0
+    table_name: embeddings_agente_0_base_geral
+    group: base_geral
+    pergunta: Vocês consideram fermento congelado melhor que liofilizado?
+    expected_all: ["fermentos congelados", "mais rápida", "mais estável"]
+    answer: "Segundo a base, fermentos congelados têm fermentação mais rápida e estável que liofilizados."
+
+  - agent_id: 0
+    table_name: embeddings_agente_0_base_geral
+    group: base_geral
+    pergunta: O uso de fermento repicado é recomendado por vocês?
+    expected_all: ["não é recomendado", "fermentos repicados"]
+    answer: "A base informa que o uso de fermentos repicados não é recomendado."
+
+  - agent_id: 0
+    table_name: embeddings_agente_0_base_geral
+    group: base_geral
+    pergunta: Qual quimosina vocês tratam como mais eficiente hoje?
+    expected_all: ["quimosina de terceira geração", "mais eficiente"]
+    answer: "A base aponta a quimosina de terceira geração como a mais eficiente em coagulação."
+
+  - agent_id: 0
+    table_name: embeddings_agente_0_base_geral
+    group: base_geral
+    pergunta: Quem fabrica a quimosina de terceira geração citada na base?
+    expected_all: ["Novonesis", "terceira geração"]
+    answer: "Segundo a base, a quimosina de terceira geração é fabricada pela Novonesis."
+
+  - agent_id: 0
+    table_name: embeddings_agente_0_base_geral
+    group: base_geral
+    pergunta: Qual índice C/P a base cita para quimosina de terceira e segunda geração?
+    expected_all: ["80", "40", "C/P"]
+    answer: "A base cita C/P de 80 para terceira geração e 40 para segunda geração."
+
+  - agent_id: 0
+    table_name: embeddings_agente_0_base_geral
+    group: base_geral
+    pergunta: O que exatamente mede o índice C/P?
+    expected_all: ["poder coagulante", "proteólise", "C/P"]
+    answer: "A base descreve C/P como relação entre poder coagulante (C) e nível de proteólise (P)."
+
+  - agent_id: 0
+    table_name: embeddings_agente_0_base_geral
+    group: base_geral
+    pergunta: Uma enzima mais eficiente deve ter C/P mais alto?
+    expected_all: ["mais eficiente", "C/P mais alto"]
+    answer: "Segundo a base, enzima mais eficiente tende a apresentar C/P mais alto."
+
+  - agent_id: 0
+    table_name: embeddings_agente_0_base_geral
+    group: base_geral
+    pergunta: CoaguSens é citado para medir coagulação em tempo real?
+    expected_all: ["CoaguSens", "tempo real"]
+    answer: "A base cita o CoaguSens como equipamento para medir coagulação em tempo real."
+
+  - agent_id: 0
+    table_name: embeddings_agente_0_base_geral
+    group: base_geral
+    pergunta: A base menciona ganho de rendimento com padronização do gel com CoaguSens?
+    expected_all: ["ganhos de rendimento", "1%"]
+    answer: "A base menciona ganhos de rendimento na ordem de 1%."
+
+  - agent_id: 0
+    table_name: embeddings_agente_0_base_geral
+    group: base_geral
+    pergunta: Quem é o distribuidor do CoaguSens no Brasil, segundo a base?
+    expected_all: ["distribuidor", "Profit"]
+    answer: "A base informa que o distribuidor no Brasil é a Profit."
+
+  # ============================================================
+  # AGENTE 3 — Regulatórios por País
+  # ============================================================
+  - agent_id: 3
+    table_name: embeddings_agente_3_regulatorios
+    group: regulatorios
+    pergunta: Qual norma trata da identidade e qualidade da ricota?
+    expected_all: ["INSTRUÇÃO NORMATIVA Nº 65", "ricota"]
+    answer: "A IN nº 65, de 21 de julho de 2020, dispõe sobre identidade e requisitos de qualidade da ricota."
+
+  - agent_id: 3
+    table_name: embeddings_agente_3_regulatorios
+    group: regulatorios
+    pergunta: Pela IN 65, a ricota pode ser fresca e também defumada?
+    expected_all: ["fresca", "defumada"]
+    answer: "Sim. A IN 65 prevê ricota fresca e ricota defumada."
+
+  - agent_id: 3
+    table_name: embeddings_agente_3_regulatorios
+    group: regulatorios
+    pergunta: A IN 65 permite adicionar leite na fabricação de ricota?
+    expected_all: ["até 20%", "ricota"]
+    answer: "A IN 65 menciona adição de leite em até 20% para ricota."
+
+  - agent_id: 3
+    table_name: embeddings_agente_3_regulatorios
+    group: regulatorios
+    pergunta: Qual instrução normativa define o queijo minas padrão?
+    expected_all: ["INSTRUÇÃO NORMATIVA Nº 66", "queijo minas padrão"]
+    answer: "A IN nº 66, de 21 de julho de 2020, define identidade e requisitos do queijo minas padrão."
+
+  - agent_id: 3
+    table_name: embeddings_agente_3_regulatorios
+    group: regulatorios
+    pergunta: O minas padrão é considerado maturado nessa norma?
+    expected_all: ["maturado", "minas padrão"]
+    answer: "Sim. A IN 66 descreve o minas padrão como queijo maturado."
+
+  - agent_id: 3
+    table_name: embeddings_agente_3_regulatorios
+    group: regulatorios
+    pergunta: Qual norma fala de sobremesa láctea e do mínimo de leite na formulação?
+    expected_all: ["sobremesa láctea", "50% m/m"]
+    answer: "A IN nº 72/2020 define sobremesa láctea e exige mais de 50% m/m de leite e derivados."
+
+  - agent_id: 3
+    table_name: embeddings_agente_3_regulatorios
+    group: regulatorios
+    pergunta: Na IN 72 pode usar gordura vegetal para substituir gordura láctea?
+    expected_all: ["não é permitida", "gordura vegetal"]
+    answer: "Não. A IN 72 veda a adição de gordura vegetal em substituição à gordura láctea."
+
+  - agent_id: 3
+    table_name: embeddings_agente_3_regulatorios
+    group: regulatorios
+    pergunta: Qual IN define os requisitos de qualidade do queijo provolone?
+    expected_all: ["INSTRUÇÃO NORMATIVA Nº 73", "provolone"]
+    answer: "A IN nº 73, de 24 de julho de 2020, trata do queijo provolone."
+
+  - agent_id: 3
+    table_name: embeddings_agente_3_regulatorios
+    group: regulatorios
+    pergunta: A norma do provolone separa categoria fresco e maturado?
+    expected_all: ["fresco", "maturado", "provolone"]
+    answer: "Sim. A IN 73 apresenta classificação em provolone fresco e maturado."
+
+  - agent_id: 3
+    table_name: embeddings_agente_3_regulatorios
+    group: regulatorios
+    pergunta: Qual norma define o queijo minas meia cura?
+    expected_all: ["INSTRUÇÃO NORMATIVA Nº 74", "minas meia cura"]
+    answer: "A IN nº 74, de 24 de julho de 2020, define identidade e requisitos do minas meia cura."
+
+  - agent_id: 3
+    table_name: embeddings_agente_3_regulatorios
+    group: regulatorios
+    pergunta: A norma do minas meia cura indica que ele pode ser defumado?
+    expected_all: ["podendo ser defumado", "minas meia cura"]
+    answer: "Sim. A IN 74 prevê que o minas meia cura pode ser defumado."
+
+  - agent_id: 3
+    table_name: embeddings_agente_3_regulatorios
+    group: regulatorios
+    pergunta: Qual RDC regula Informação Nutricional Complementar (INC e INCC)?
+    expected_all: ["RDC 54", "INC"]
+    answer: "A RDC nº 54, de 12 de novembro de 2012, dispõe sobre Informação Nutricional Complementar."
+
+  - agent_id: 3
+    table_name: embeddings_agente_3_regulatorios
+    group: regulatorios
+    pergunta: A RDC 54 incorpora qual resolução do Mercosul?
+    expected_all: ["GMC MERCOSUL", "01/2012"]
+    answer: "A RDC 54 incorpora a Resolução GMC Mercosul nº 01/2012."
+
+  - agent_id: 3
+    table_name: embeddings_agente_3_regulatorios
+    group: regulatorios
+    pergunta: Qual prazo a RDC 54 deu para adequação das empresas?
+    expected_all: ["1 de janeiro de 2014", "RDC 54"]
+    answer: "A RDC 54 estabeleceu prazo até 1 de janeiro de 2014 para adequações."
+
+  - agent_id: 3
+    table_name: embeddings_agente_3_regulatorios
+    group: regulatorios
+    pergunta: A lista de enzimas e aditivos de preparações enzimáticas está em qual RDC?
+    expected_all: ["RDC", "53", "enzimas"]
+    answer: "A RDC nº 53, de 7 de outubro de 2014, trata da lista de enzimas e aditivos para preparações enzimáticas."
+
+  - agent_id: 3
+    table_name: embeddings_agente_3_regulatorios
+    group: regulatorios
+    pergunta: Pela RDC 53, os aditivos em preparações enzimáticas são permitidos em qual limite?
+    expected_all: ["quantum satis", "q.s."]
+    answer: "A RDC 53 cita uso em limite quantum satis (q.s.) para os aditivos previstos."
+
+  - agent_id: 3
+    table_name: embeddings_agente_3_regulatorios
+    group: regulatorios
+    pergunta: Se eu quiser incluir enzima fora da lista da RDC 53, o que a norma diz?
+    expected_all: ["ANVISA", "RDC 53"]
+    answer: "A RDC 53 prevê inclusão mediante autorização da ANVISA, a pedido do interessado."
+
+  - agent_id: 3
+    table_name: embeddings_agente_3_regulatorios
+    group: regulatorios
+    pergunta: Qual instrução normativa é referência para leites fermentados?
+    expected_all: ["INSTRUÇÃO NORMATIVA Nº 46", "2007"]
+    answer: "A IN nº 46, de 23 de outubro de 2007, é referência para leites fermentados."
+
+  - agent_id: 3
+    table_name: embeddings_agente_3_regulatorios
+    group: regulatorios
+    pergunta: A IN 46 reconhece designações como iogurte e yoghurt?
+    expected_all: ["Iogurte", "Yoghurt"]
+    answer: "Sim. A IN 46 contempla designações como Iogurte/Yoghurt, conforme classificação."
+
+  - agent_id: 3
+    table_name: embeddings_agente_3_regulatorios
+    group: regulatorios
+    pergunta: Na IN 46, pode mencionar bifidobactérias no rótulo?
+    expected_all: ["bifidobactérias", "atenda"]
+    answer: "A norma indica que pode haver menção de bifidobactérias quando atendidos os critérios previstos."
+
+  # ============================================================
+  # AGENTE 4 — Qualidade do Leite
+  # ============================================================
+  - agent_id: 4
+    table_name: embeddings_agente_4_qualidade_leite
+    group: qualidade_leite
+    pergunta: Quais cuidados gerais de laboratório a IN 68 recomenda?
+    expected_all: ["cuidados gerais", "laboratório", "segurança"]
+    answer: "A IN 68 recomenda uso de proteção adequada, organização e condutas de segurança no laboratório."
+
+  - agent_id: 4
+    table_name: embeddings_agente_4_qualidade_leite
+    group: qualidade_leite
+    pergunta: Pela IN 68, é permitido correr dentro do laboratório?
+    expected_all: ["Não correr", "laboratório"]
+    answer: "Não. A IN 68 orienta explicitamente não correr dentro do laboratório."
+
+  - agent_id: 4
+    table_name: embeddings_agente_4_qualidade_leite
+    group: qualidade_leite
+    pergunta: O que devo vestir no laboratório segundo a IN 68?
+    expected_all: ["uniformes adequados", "tecido de algodão"]
+    answer: "A IN 68 recomenda uniforme adequado, preferencialmente de algodão, longo e fechado."
+
+  - agent_id: 4
+    table_name: embeddings_agente_4_qualidade_leite
+    group: qualidade_leite
+    pergunta: Na IN 68 tem alguma orientação sobre calçados no laboratório?
+    expected_all: ["Proteger", "pés", "calçados"]
+    answer: "Sim. A IN 68 orienta proteger bem os pés, com calçados adequados e fechados."
+
+  - agent_id: 4
+    table_name: embeddings_agente_4_qualidade_leite
+    group: qualidade_leite
+    pergunta: Posso comer ou fumar na área de análise?
+    expected_all: ["Comer", "beber", "fumar", "locais permitidos"]
+    answer: "A IN 68 orienta comer, beber ou fumar somente nos locais permitidos."
+
+  - agent_id: 4
+    table_name: embeddings_agente_4_qualidade_leite
+    group: qualidade_leite
+    pergunta: Em incêndio com papel ou madeira, o que a IN 68 manda fazer?
+    expected_all: ["usar água", "base do fogo"]
+    answer: "Para fogo em papel/madeira, a IN 68 orienta usar água e direcionar o jato para a base do fogo."
+
+  - agent_id: 4
+    table_name: embeddings_agente_4_qualidade_leite
+    group: qualidade_leite
+    pergunta: Em incêndio com líquido inflamável, posso jogar água?
+    expected_all: ["Não jogar água", "líquidos inflamáveis"]
+    answer: "Não. A IN 68 orienta não jogar água em líquidos inflamáveis não miscíveis em água."
+
+  - agent_id: 4
+    table_name: embeddings_agente_4_qualidade_leite
+    group: qualidade_leite
+    pergunta: Qual extintor usar em circuito elétrico, segundo a IN 68?
+    expected_all: ["circuitos elétricos", "CO2"]
+    answer: "A IN 68 orienta usar extintores de CO2 para circuitos elétricos."
+
+  - agent_id: 4
+    table_name: embeddings_agente_4_qualidade_leite
+    group: qualidade_leite
+    pergunta: Ao sair do laboratório, que checklist básico a IN 68 pede?
+    expected_all: ["torneiras", "desligar", "lavar as mãos"]
+    answer: "A IN 68 orienta verificar torneiras, desligar aparelhos, limpar equipamentos e lavar as mãos."
+
+  - agent_id: 4
+    table_name: embeddings_agente_4_qualidade_leite
+    group: qualidade_leite
+    pergunta: Além disso, ao sair do laboratório devo checar janelas e luzes?
+    expected_all: ["Fechar as janelas", "apagar a luz", "fechar a porta"]
+    answer: "Sim. A IN 68 orienta fechar janelas, apagar luz e fechar a porta."
+
+  - agent_id: 4
+    table_name: embeddings_agente_4_qualidade_leite
+    group: qualidade_leite
+    pergunta: Na diluição de ácido forte, qual a regra correta?
+    expected_all: ["ácidos fortes", "água"]
+    answer: "A orientação clássica da IN 68 é adicionar o ácido à água, nunca o contrário."
+
+  - agent_id: 4
+    table_name: embeddings_agente_4_qualidade_leite
+    group: qualidade_leite
+    pergunta: Qual quantidade mínima de amostra para análises físico-químicas?
+    expected_all: ["500", "1.000", "mL"]
+    answer: "A IN 68 indica, como referência, 500 g ou 1.000 mL para leite fluido."
+
+  - agent_id: 4
+    table_name: embeddings_agente_4_qualidade_leite
+    group: qualidade_leite
+    pergunta: Como enviar amostras para físico-química e microbiologia conforme IN 68?
+    expected_all: ["separadas", "embalagem original", "microbiológicas"]
+    answer: "A IN 68 orienta envio separado para físico-química e microbiologia, com embalagem apropriada/original quando aplicável."
+
+  - agent_id: 4
+    table_name: embeddings_agente_4_qualidade_leite
+    group: qualidade_leite
+    pergunta: A IN 68 cobre métodos qualitativos para controle de leite?
+    expected_all: ["metodos qualitativos", "controle de leite"]
+    answer: "Sim. A IN 68 contempla métodos qualitativos para controle do leite."
+
+  - agent_id: 4
+    table_name: embeddings_agente_4_qualidade_leite
+    group: qualidade_leite
+    pergunta: A IN 68 também trata de métodos quantitativos?
+    expected_all: ["metodos quantitativos", "IN 68"]
+    answer: "Sim. Há seção/documento de métodos quantitativos associados à IN 68."
+
+  - agent_id: 4
+    table_name: embeddings_agente_4_qualidade_leite
+    group: qualidade_leite
+    pergunta: Existe conteúdo na base sobre preparo de amostras e avaliação sensorial?
+    expected_all: ["caracteristicas sensoriais", "preparo de amostras"]
+    answer: "Sim. A base inclui documento sobre características sensoriais e preparo de amostras."
+
+  - agent_id: 4
+    table_name: embeddings_agente_4_qualidade_leite
+    group: qualidade_leite
+    pergunta: A base traz métodos analíticos oficiais físico-químicos para controle de leite?
+    expected_all: ["metodos analiticos oficiais", "controle de leite"]
+    answer: "Sim. Esse tópico está explicitamente coberto na base da IN 68."
+
+  - agent_id: 4
+    table_name: embeddings_agente_4_qualidade_leite
+    group: qualidade_leite
+    pergunta: Tem orientação sobre soluções padrão na base da IN 68?
+    expected_all: ["soluções padrões", "IN 68"]
+    answer: "Sim. A base possui documento específico sobre soluções padrões."
+
+  - agent_id: 4
+    table_name: embeddings_agente_4_qualidade_leite
+    group: qualidade_leite
+    pergunta: Quais são os cuidados em caso de incêndio dentro do laboratório?
+    expected_all: ["incêndio", "extintores", "CO2", "laboratório"]
+    answer: "A IN 68 descreve procedimentos por tipo de fogo e uso correto de extintores, incluindo CO2 para circuito elétrico."
+
+  - agent_id: 4
+    table_name: embeddings_agente_4_qualidade_leite
+    group: qualidade_leite
+    pergunta: A IN 68 fala de manter o local de trabalho limpo e sem obstáculos?
+    expected_all: ["Manter sempre limpo", "evitando obstáculos"]
+    answer: "Sim. Entre os cuidados gerais, a IN 68 orienta manter o local limpo e sem obstáculos desnecessários."

@@ -1,0 +1,140 @@
+# ============================================================
+# experiments.template.yaml — Template de combinações para teste
+#
+# Adaptado do experiments.template.yaml do projeto original.
+# Cada entrada define uma combinação de parâmetros para testar.
+#
+# Dimensões cobertas:
+#   chunking ∈ {fixed, markdown}
+#   search_type ∈ {vector, text, hybrid_rrf}
+#   use_hyde ∈ {false, true}
+#   reranker ∈ {none, cohere}
+#   Total: 2 × 3 × 2 × 2 = 24 combinações (sem semantic)
+#
+# Semantic chunking removido do template padrão porque:
+#   - Requer chamadas extras à API de embeddings na ingestão
+#   - Gera chunks de tamanho imprevisível
+#   - Para documentos técnicos (manuais, legislação), markdown
+#     e fixed produzem resultados mais consistentes
+#   - Pode ser adicionado descomentando a seção no final
+#
+# Como usar:
+#   1. Copie este arquivo para experiments.yaml:
+#      cp experiments.template.yaml experiments.yaml
+#   2. Comente as combinações que não quer testar
+#   3. Rode: make rag_experiments
+#
+# O runner lê cada combinação, executa a busca com esses
+# parâmetros sobre o dataset rag_queries.yaml, e gera um
+# relatório CSV comparativo.
+# ============================================================
+
+experiments:
+  # ============================================================
+  # FIXED CHUNKING
+  # ============================================================
+  
+  # Vector puro (baseline)
+  - name: fixed_vector
+    chunking: fixed
+    search_type: vector
+    use_hyde: false
+    reranker: none
+
+  # Vector + HyDE (query expansion)
+  - name: fixed_vector_hyde
+    chunking: fixed
+    search_type: vector
+    use_hyde: true
+    reranker: none
+
+  # Text puro (FTS)
+  - name: fixed_text
+    chunking: fixed
+    search_type: text
+    use_hyde: false
+    reranker: none
+
+  # Hybrid RRF (vector + text)
+  - name: fixed_hybrid_rrf
+    chunking: fixed
+    search_type: hybrid_rrf
+    use_hyde: false
+    reranker: none
+
+  # Hybrid RRF + HyDE
+  - name: fixed_hybrid_rrf_hyde
+    chunking: fixed
+    search_type: hybrid_rrf
+    use_hyde: true
+    reranker: none
+
+  # Hybrid RRF + Rerank
+  - name: fixed_hybrid_rrf_rerank
+    chunking: fixed
+    search_type: hybrid_rrf
+    use_hyde: false
+    reranker: cohere
+
+  # ============================================================
+  # MARKDOWN CHUNKING
+  # ============================================================
+  
+  - name: md_vector
+    chunking: markdown
+    search_type: vector
+    use_hyde: false
+    reranker: none
+
+  - name: md_vector_hyde
+    chunking: markdown
+    search_type: vector
+    use_hyde: true
+    reranker: none
+
+  - name: md_text
+    chunking: markdown
+    search_type: text
+    use_hyde: false
+    reranker: none
+
+  - name: md_hybrid_rrf
+    chunking: markdown
+    search_type: hybrid_rrf
+    use_hyde: false
+    reranker: none
+
+  - name: md_hybrid_rrf_hyde
+    chunking: markdown
+    search_type: hybrid_rrf
+    use_hyde: true
+    reranker: none
+
+  - name: md_hybrid_rrf_rerank
+    chunking: markdown
+    search_type: hybrid_rrf
+    use_hyde: false
+    reranker: cohere
+
+  # ============================================================
+  # SEMANTIC CHUNKING (opcional — descomente para usar)
+  # Requer: langchain-experimental instalado + OPENAI_API_KEY
+  # ============================================================
+  
+  # - name: sem_vector
+  #   chunking: semantic
+  #   search_type: vector
+  #   use_hyde: false
+  #   reranker: none
+
+  # - name: sem_hybrid_rrf
+  #   chunking: semantic
+  #   search_type: hybrid_rrf
+  #   use_hyde: false
+  #   reranker: none
+
+  # - name: sem_hybrid_rrf_rerank
+  #   chunking: semantic
+  #   search_type: hybrid_rrf
+  #   use_hyde: false
+  #   reranker: cohere

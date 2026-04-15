@@ -1,0 +1,15 @@
+{
+  "dependencies": ["."],
+  "env": ".env",
+  "graphs": {
+    "agente_0_base_geral": "app.graphs:agente_0_base_geral",
+    "agente_1_queijos": "app.graphs:agente_1_queijos",
+    "agente_2_fermentados": "app.graphs:agente_2_fermentados",
+    "agente_3_regulatorios": "app.graphs:agente_3_regulatorios",
+    "agente_4_qualidade_leite": "app.graphs:agente_4_qualidade_leite",
+    "agente_5_defeitos": "app.graphs:agente_5_defeitos",
+    "agente_6_formulacao": "app.graphs:agente_6_formulacao",
+    "orquestrador": "app.graphs:orquestrador",
+    "rag_ingest": "app.graphs:rag_ingest"
+  }
+}
