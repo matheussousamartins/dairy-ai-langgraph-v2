@@ -38,6 +38,9 @@ from typing import List, Dict, Any, Optional, TypedDict
 from datetime import datetime
 from pathlib import Path
 import hashlib
+import re
+import unicodedata
+from uuid import uuid4
 
 from langchain_openai import OpenAIEmbeddings
 from langgraph.graph import StateGraph, END
@@ -48,6 +51,13 @@ from app.config import (
     DEFAULT_CHUNK_SIZE,
     DEFAULT_CHUNK_OVERLAP,
     CHUNK_SIZES,
+    INGEST_BLOCK_LOW_QUALITY,
+    INGEST_MIN_TEXT_CHARS,
+    INGEST_MIN_WORDS,
+    INGEST_MIN_TEXT_CHARS_GLOSSARIO,
+    INGEST_MIN_WORDS_GLOSSARIO,
+    INGEST_MAX_GARBLED_RATIO,
+    INGEST_MIN_QUALITY_SCORE,
 )
 from app.rag.loaders import split_text, split_by_doc_type
 from app.db.connection import get_supabase_conn, get_hetzner_conn
@@ -101,7 +111,7 @@ def vec_to_literal(v: List[float]) -> str:
 def upsert_chunks(
     table_name: str,
     chunks: List[Dict[str, Any]],
-) -> int:
+) -> Dict[str, int]:
     """Insere ou atualiza chunks com embeddings na tabela do Supabase.
     
     Cada chunk é um dict com:
@@ -125,12 +135,14 @@ def upsert_chunks(
         chunks: Lista de chunks com content, embedding e metadata.
     
     Retorna:
-        Quantidade de chunks inseridos/atualizados.
+        Dict com quantidade de chunks processados, inseridos e atualizados.
     """
     if not chunks:
-        return 0
-    
-    count = 0
+        return {"processed": 0, "inserted": 0, "updated": 0}
+
+    processed = 0
+    inserted = 0
+    updated = 0
     
     with get_supabase_conn() as conn:
         with conn.cursor() as cur:
@@ -166,12 +178,23 @@ def upsert_chunks(
                         embedding = EXCLUDED.embedding,
                         metadata = EXCLUDED.metadata,
                         content = EXCLUDED.content
+                    RETURNING (xmax = 0) AS was_inserted
                     """,
                     (chunk["content"], vec_lit, meta_json, content_hash),
                 )
-                count += 1
-    
-    return count
+                row = cur.fetchone()
+                was_inserted = bool(row[0]) if row else False
+                processed += 1
+                if was_inserted:
+                    inserted += 1
+                else:
+                    updated += 1
+
+    return {
+        "processed": processed,
+        "inserted": inserted,
+        "updated": updated,
+    }
 
 
 # ============================================================
@@ -179,15 +202,307 @@ def upsert_chunks(
 # ============================================================
 
 def _compute_document_hash(text: str) -> str:
-    """Gera hash estável do documento completo para deduplicação."""
-    normalized = text.replace("\r\n", "\n").strip()
+    """Gera hash estavel do documento completo para deduplicacao."""
+    normalized = unicodedata.normalize("NFKC", text or "")
+    normalized = normalized.replace("\r\n", "\n").replace("\r", "\n")
+    normalized = re.sub(r"[ \t]+", " ", normalized)
+    normalized = re.sub(r"\n{3,}", "\n\n", normalized)
+    normalized = normalized.strip()
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def _normalize_glossary_text(text: str) -> str:
+    """Padroniza glossario tabular para formato canonico.
+
+    Entrada esperada (comum): tabela markdown com colunas
+    "Palavra Encontrada" e "Substituicao".
+    Saida: linhas estaveis no formato
+      termo: <x> | substituicao: <y>
+    Isso melhora deduplicacao, chunking e qualidade semantica do embedding.
+    """
+    raw = unicodedata.normalize("NFKC", text or "")
+    lines = [ln.strip() for ln in raw.replace("\r\n", "\n").replace("\r", "\n").split("\n")]
+    cleaned = [ln for ln in lines if ln]
+    if not cleaned:
+        return ""
+
+    normalized_lines: List[str] = []
+    table_rows = [ln for ln in cleaned if "|" in ln]
+    if table_rows:
+        for ln in table_rows:
+            # Ignora cabecalho/separador de tabela markdown
+            low = ln.lower()
+            if "palavra encontrada" in low and "substit" in low:
+                continue
+            if re.fullmatch(r"\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?", ln):
+                continue
+            parts = [p.strip() for p in ln.strip("|").split("|")]
+            if len(parts) < 2:
+                continue
+            termo = re.sub(r"\s+", " ", parts[0]).strip(" -;:.")
+            sub = re.sub(r"\s+", " ", parts[1]).strip(" -;:.")
+            if termo and sub:
+                normalized_lines.append(f"termo: {termo} | substituicao: {sub}")
+    else:
+        # Suporta formato "Registro + bullets", ex:
+        # ## Registro 001
+        # - Palavra encontrada: Starter
+        # - Substituição: Fermento
+        current_term: Optional[str] = None
+        current_sub: Optional[str] = None
+
+        def _flush_pair() -> None:
+            nonlocal current_term, current_sub
+            if current_term and current_sub:
+                normalized_lines.append(
+                    f"termo: {current_term} | substituicao: {current_sub}"
+                )
+            current_term = None
+            current_sub = None
+
+        for ln in cleaned:
+            ln2 = re.sub(r"\s+", " ", ln).strip()
+            low = ln2.lower()
+
+            # ignora cabeçalhos genéricos e de registro
+            if low.startswith("#"):
+                if "registro" in low:
+                    _flush_pair()
+                continue
+
+            # remove marcador de lista no início
+            ln2 = re.sub(r"^\s*[-*]\s*", "", ln2).strip()
+            low2 = ln2.lower()
+
+            # termo
+            m_term = re.match(
+                r"^(palavra encontrada|termo)\s*:\s*(.+)$",
+                low2,
+                flags=re.IGNORECASE,
+            )
+            if m_term:
+                _flush_pair()
+                current_term = re.sub(
+                    r"^(palavra encontrada|termo)\s*:\s*",
+                    "",
+                    ln2,
+                    flags=re.IGNORECASE,
+                ).strip(" -;:.")
+                continue
+
+            # substituição
+            m_sub = re.match(
+                r"^(substituicao|substituição|equivalente)\s*:\s*(.+)$",
+                low2,
+                flags=re.IGNORECASE,
+            )
+            if m_sub:
+                current_sub = re.sub(
+                    r"^(substituicao|substituição|equivalente)\s*:\s*",
+                    "",
+                    ln2,
+                    flags=re.IGNORECASE,
+                ).strip(" -;:.")
+                continue
+
+            # fallback para linha tipo "A -> B" ou "A: B"
+            if "->" in ln2:
+                _flush_pair()
+                parts = [p.strip(" -;:.") for p in ln2.split("->", 1)]
+                if len(parts) == 2 and parts[0] and parts[1]:
+                    normalized_lines.append(
+                        f"termo: {parts[0]} | substituicao: {parts[1]}"
+                    )
+                continue
+
+            if ":" in ln2 and not low2.startswith(("fonte:", "nota:")):
+                maybe_term, maybe_sub = [p.strip(" -;:.") for p in ln2.split(":", 1)]
+                if maybe_term and maybe_sub:
+                    _flush_pair()
+                    normalized_lines.append(
+                        f"termo: {maybe_term} | substituicao: {maybe_sub}"
+                    )
+
+        _flush_pair()
+
+        # fallback final: preserva linhas se nada foi extraído em pares
+        if not normalized_lines:
+            for ln in cleaned:
+                ln2 = re.sub(r"\s+", " ", ln).strip()
+                if ln2:
+                    normalized_lines.append(ln2)
+
+    deduped: List[str] = []
+    seen = set()
+    for ln in normalized_lines:
+        k = ln.lower()
+        if k in seen:
+            continue
+        seen.add(k)
+        deduped.append(ln)
+
+    if not deduped:
+        return ""
+    return "\n".join(deduped).strip() + "\n"
+
+
+def _preprocess_text_by_doc_type(text: str, doc_type: str) -> str:
+    """Pre-processa texto por tipo de documento para melhorar consistencia."""
+    dt = (doc_type or "").strip().lower()
+    if dt == "glossario":
+        return _normalize_glossary_text(text)
+    return text or ""
+
+
+def _normalize_source_name(source: str) -> str:
+    """Normaliza nome/origem para filtros de metadados consistentes."""
+    raw = unicodedata.normalize("NFKC", (source or "").strip())
+    raw = raw.replace("\\", "/")
+    raw = raw.split("/")[-1]
+    raw = re.sub(r"\s+", " ", raw).strip()
+    return raw.lower()
+
+
+def _extract_legislation_chunk_metadata(chunk_text: str) -> Dict[str, Any]:
+    """Extrai metadados estruturados de chunks legislativos."""
+    meta: Dict[str, Any] = {}
+    if not chunk_text:
+        return meta
+
+    first_line = chunk_text.split("\n", 1)[0].strip()
+    path_parts = [p.strip() for p in re.split(r"\s*>\s*", first_line) if p.strip()]
+    if path_parts:
+        meta["section_path"] = " > ".join(path_parts)
+        meta["section_leaf"] = path_parts[-1]
+
+    art = re.search(r"\bArt\.\s*(\d+[A-Za-z]?)", chunk_text, flags=re.IGNORECASE)
+    if art:
+        meta["article_number"] = art.group(1)
+
+    par = re.search(r"§\s*(\d+)", chunk_text)
+    if par:
+        meta["paragraph_number"] = par.group(1)
+
+    if path_parts:
+        leaf = path_parts[-1]
+        m_title = re.match(
+            r"Art\.\s*\d+[A-Za-zº°]*\s*[^A-Za-z0-9\s]?\s*(.+)$",
+            leaf,
+            flags=re.IGNORECASE,
+        )
+        if m_title:
+            meta["article_title"] = re.sub(r"\s+", " ", m_title.group(1)).strip()
+        elif leaf.lower().startswith("art."):
+            for sep in ("—", "-", ":"):
+                if sep in leaf:
+                    maybe_title = leaf.split(sep, 1)[1].strip()
+                    if maybe_title:
+                        meta["article_title"] = re.sub(r"\s+", " ", maybe_title).strip()
+                    break
+
+    return meta
+
+
+def _build_chunk_metadata(
+    *,
+    agent_id: int,
+    source: str,
+    doc_type: str,
+    chunk_index: int,
+    strategy: str,
+    chunk_text: str,
+) -> Dict[str, Any]:
+    """Monta metadados do chunk para auditoria e filtros de recuperação."""
+    normalized_chunk = chunk_text or ""
+    words = re.findall(r"\b[\wÀ-ÿ]{2,}\b", normalized_chunk)
+    metadata: Dict[str, Any] = {
+        "agent_id": agent_id,
+        "source": source,
+        "source_norm": _normalize_source_name(source),
+        "doc_type": doc_type,
+        "chunk_index": chunk_index,
+        "strategy": strategy,
+        "chunk_chars": len(normalized_chunk),
+        "chunk_words": len(words),
+        "chunk_hash": hashlib.sha256(normalized_chunk.encode("utf-8")).hexdigest()[:16],
+        "ingested_at": datetime.utcnow().isoformat(),
+    }
+    if (doc_type or "").strip().lower() == "legislacao":
+        metadata.update(_extract_legislation_chunk_metadata(normalized_chunk))
+    return metadata
+
+
+def _assess_text_quality(text: str, doc_type: str = "manual") -> Dict[str, Any]:
+    """Avalia qualidade minima do texto para ingestao."""
+    raw = text or ""
+    normalized = unicodedata.normalize("NFKC", raw)
+    words = re.findall(r"\b[\wÀ-ÿ]{2,}\b", normalized)
+    word_count = len(words)
+    char_count = len(normalized)
+
+    garbled_tokens = ["�", "Ã", "Â", "Ð", "Ñ", "\x00"]
+    garbled_hits = sum(normalized.count(tok) for tok in garbled_tokens)
+    garbled_ratio = garbled_hits / max(1, char_count)
+    mojibake_tokens = [
+        "Ã",
+        "Â",
+        "â€",
+        "â€“",
+        "â€”",
+        "ï¿½",
+    ]
+    mojibake_hits = sum(normalized.count(tok) for tok in mojibake_tokens)
+    mojibake_ratio = mojibake_hits / max(1, word_count)
+    max_mojibake_ratio = 0.03
+
+    dt = (doc_type or "").strip().lower()
+    min_chars = INGEST_MIN_TEXT_CHARS
+    min_words = INGEST_MIN_WORDS
+    if dt == "glossario":
+        min_chars = INGEST_MIN_TEXT_CHARS_GLOSSARIO
+        min_words = INGEST_MIN_WORDS_GLOSSARIO
+
+    length_score = min(1.0, char_count / max(1, min_chars))
+    words_score = min(1.0, word_count / max(1, min_words))
+    garble_score = max(0.0, 1.0 - (garbled_ratio / max(1e-9, INGEST_MAX_GARBLED_RATIO)))
+    quality_score = round((0.35 * length_score + 0.35 * words_score + 0.30 * garble_score) * 100, 2)
+
+    reasons: List[str] = []
+    if char_count < min_chars:
+        reasons.append(f"Texto muito curto ({char_count} chars < {min_chars})")
+    if word_count < min_words:
+        reasons.append(f"Poucas palavras ({word_count} < {min_words})")
+    if garbled_ratio > INGEST_MAX_GARBLED_RATIO:
+        reasons.append(
+            f"Alta taxa de caracteres suspeitos ({garbled_ratio:.2%} > {INGEST_MAX_GARBLED_RATIO:.2%})"
+        )
+    if mojibake_ratio > max_mojibake_ratio:
+        reasons.append(
+            f"Texto com sinais fortes de encoding corrompido/mojibake ({mojibake_ratio:.2%} > {max_mojibake_ratio:.2%})"
+        )
+    if quality_score < INGEST_MIN_QUALITY_SCORE:
+        reasons.append(f"Quality score abaixo do minimo ({quality_score} < {INGEST_MIN_QUALITY_SCORE})")
+
+    return {
+        "quality_gate_passed": len(reasons) == 0,
+        "quality_score": quality_score,
+        "text_chars": char_count,
+        "word_count": word_count,
+        "garbled_ratio": round(garbled_ratio, 6),
+        "mojibake_ratio": round(mojibake_ratio, 6),
+        "thresholds": {
+            "min_text_chars": min_chars,
+            "min_words": min_words,
+            "max_garbled_ratio": INGEST_MAX_GARBLED_RATIO,
+            "max_mojibake_ratio": max_mojibake_ratio,
+            "min_quality_score": INGEST_MIN_QUALITY_SCORE,
+        },
+        "quality_issues": reasons,
+    }
 
 
 def _find_existing_ingestion(
     *,
-    table_name: str,
-    agent_id: int,
     file_hash: str,
 ) -> Optional[Dict[str, Any]]:
     """Busca documento já ingerido por hash na tabela de rastreabilidade.
@@ -200,29 +515,152 @@ def _find_existing_ingestion(
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT id, source_filename, chunk_count, ingested_at, status
+                    SELECT id, table_name, agent_id, source_filename, chunk_count, ingested_at, status
                     FROM ingested_documents
-                    WHERE table_name = %s
-                      AND agent_id = %s
-                      AND file_hash = %s
+                    WHERE file_hash = %s
                       AND status = 'ingested'
                     ORDER BY ingested_at DESC
                     LIMIT 1
                     """,
-                    (table_name, agent_id, file_hash),
+                    (file_hash,),
                 )
                 row = cur.fetchone()
                 if not row:
                     return None
                 return {
                     "id": row[0],
-                    "source_filename": row[1],
-                    "chunk_count": row[2],
-                    "ingested_at": row[3],
-                    "status": row[4],
+                    "table_name": row[1],
+                    "agent_id": row[2],
+                    "source_filename": row[3],
+                    "chunk_count": row[4],
+                    "ingested_at": row[5],
+                    "status": row[6],
                 }
     except Exception:
         return None
+
+
+def _reserve_ingestion_slot(
+    *,
+    table_name: str,
+    agent_id: int,
+    source: str,
+    doc_type: str,
+    file_hash: str,
+    source_size_bytes: Optional[int],
+) -> Dict[str, Any]:
+    """Reserva um slot de ingestao para evitar corrida entre uploads simultaneos.
+
+    Requer indice unico parcial em `ingested_documents(file_hash)` para status
+    ativos (`processing`/`ingested`). Se o indice ainda nao existir, o fallback
+    e seguir com o comportamento antigo.
+    """
+    token = f"ingest-{uuid4().hex}"
+    try:
+        with get_hetzner_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO ingested_documents
+                        (table_name, agent_id, source_filename, doc_type, chunk_count,
+                         status, ingested_at, file_hash, source_size_bytes, status_detail)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT DO NOTHING
+                    RETURNING id
+                    """,
+                    (
+                        table_name,
+                        agent_id,
+                        source,
+                        doc_type,
+                        0,
+                        "processing",
+                        datetime.utcnow(),
+                        file_hash,
+                        source_size_bytes,
+                        f"reservation_token={token}",
+                    ),
+                )
+                row = cur.fetchone()
+                if row:
+                    return {"reserved": True, "reservation_id": row[0], "reservation_token": token}
+
+                cur.execute(
+                    """
+                    SELECT id, table_name, agent_id, source_filename, chunk_count, ingested_at, status
+                    FROM ingested_documents
+                    WHERE file_hash = %s
+                      AND status IN ('processing', 'ingested')
+                    ORDER BY ingested_at DESC
+                    LIMIT 1
+                    """,
+                    (file_hash,),
+                )
+                existing = cur.fetchone()
+                if existing:
+                    return {
+                        "reserved": False,
+                        "existing": {
+                            "id": existing[0],
+                            "table_name": existing[1],
+                            "agent_id": existing[2],
+                            "source_filename": existing[3],
+                            "chunk_count": existing[4],
+                            "ingested_at": existing[5],
+                            "status": existing[6],
+                        },
+                    }
+                return {"reserved": True, "reservation_id": None, "reservation_token": token}
+    except Exception:
+        return {"reserved": True, "reservation_id": None, "reservation_token": token}
+
+
+def _update_ingestion_status(
+    *,
+    reservation_id: Optional[int],
+    reservation_token: Optional[str],
+    status: str,
+    chunk_count: int,
+    status_detail: Optional[str] = None,
+) -> None:
+    """Atualiza o registro reservado de ingestao para status final."""
+    if not reservation_id and not reservation_token:
+        return
+    try:
+        with get_hetzner_conn() as conn:
+            with conn.cursor() as cur:
+                if reservation_id:
+                    cur.execute(
+                        """
+                        UPDATE ingested_documents
+                        SET status = %s,
+                            chunk_count = %s,
+                            status_detail = %s,
+                            ingested_at = %s
+                        WHERE id = %s
+                        """,
+                        (status, chunk_count, status_detail, datetime.utcnow(), reservation_id),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        UPDATE ingested_documents
+                        SET status = %s,
+                            chunk_count = %s,
+                            status_detail = %s,
+                            ingested_at = %s
+                        WHERE status_detail = %s
+                        """,
+                        (
+                            status,
+                            chunk_count,
+                            status_detail,
+                            datetime.utcnow(),
+                            f"reservation_token={reservation_token}",
+                        ),
+                    )
+    except Exception as e:
+        print(f"[ingest] Aviso: falha ao atualizar status de ingestao: {e}")
 
 def ingest_text(
     text: str,
@@ -278,22 +716,68 @@ def ingest_text(
         )
     """
     start_time = datetime.utcnow()
+    normalized_doc_type = (doc_type or "").strip().lower()
     _strategy = strategy or DEFAULT_CHUNK_STRATEGY
+    if normalized_doc_type == "glossario":
+        _strategy = "fixed"
+
+    text = _preprocess_text_by_doc_type(text, normalized_doc_type)
     source_size_bytes = len(text.encode("utf-8"))
+    quality_report = _assess_text_quality(text, doc_type=normalized_doc_type)
+    reservation_id: Optional[int] = None
+    reservation_token: Optional[str] = None
+
+    if INGEST_BLOCK_LOW_QUALITY and not quality_report["quality_gate_passed"]:
+        _log_ingestion(
+            table_name=table_name,
+            agent_id=agent_id,
+            source=source,
+            doc_type=normalized_doc_type,
+            chunk_count=0,
+            status="rejected_quality",
+            file_hash=None,
+            source_size_bytes=source_size_bytes,
+            status_detail="; ".join(quality_report.get("quality_issues", []))[:1000],
+        )
+        return {
+            "success": False,
+            "error": "Documento bloqueado pelo quality gate de ingestao.",
+            "chunks_created": 0,
+            "chunks_processed": 0,
+            "chunks_inserted": 0,
+            "chunks_updated": 0,
+            "table_name": table_name,
+            "agent_id": agent_id,
+            "source": source,
+            "doc_type": normalized_doc_type,
+            "strategy": _strategy,
+            "processing_time_ms": int(
+                (datetime.utcnow() - start_time).total_seconds() * 1000
+            ),
+            **quality_report,
+        }
+
     file_hash = _compute_document_hash(text)
 
-    # ---- Etapa 0: Deduplicação por documento ----
-    existing = _find_existing_ingestion(
+    # ---- Etapa 0: Reserva de ingestao + deduplicacao por documento ----
+    reservation = _reserve_ingestion_slot(
         table_name=table_name,
         agent_id=agent_id,
+        source=source,
+        doc_type=normalized_doc_type,
         file_hash=file_hash,
+        source_size_bytes=source_size_bytes,
     )
+    reservation_id = reservation.get("reservation_id")
+    reservation_token = reservation.get("reservation_token")
+
+    existing = reservation.get("existing")
     if existing:
         _log_ingestion(
             table_name=table_name,
             agent_id=agent_id,
             source=source,
-            doc_type=doc_type,
+            doc_type=normalized_doc_type,
             chunk_count=0,
             status="skipped_duplicate",
             file_hash=file_hash,
@@ -307,87 +791,126 @@ def ingest_text(
             "success": True,
             "skipped_duplicate": True,
             "chunks_created": 0,
+            "chunks_processed": 0,
+            "chunks_inserted": 0,
+            "chunks_updated": 0,
             "table_name": table_name,
+            "agent_id": agent_id,
             "source": source,
-            "doc_type": doc_type,
+            "doc_type": normalized_doc_type,
             "strategy": _strategy,
             "processing_time_ms": int(
                 (datetime.utcnow() - start_time).total_seconds() * 1000
             ),
             "duplicate_of": existing,
             "file_hash": file_hash,
+            **quality_report,
         }
-    
-    # ---- Etapa 1: Chunking ----
-    # split_by_doc_type busca o tamanho ideal no CHUNK_SIZES do config
-    # Ex: doc_type="legislacao" → chunk_size=600, overlap=100
-    chunks_text, resolved_strategy = split_by_doc_type(
-        text=text,
-        doc_type=doc_type,
-        strategy=_strategy,
-    )
-    
-    if not chunks_text:
+
+    try:
+        # ---- Etapa 1: Chunking ----
+        # split_by_doc_type busca o tamanho ideal no CHUNK_SIZES do config
+        # Ex: doc_type="legislacao" -> chunk_size=600, overlap=100
+        chunks_text, resolved_strategy = split_by_doc_type(
+            text=text,
+            doc_type=normalized_doc_type,
+            strategy=_strategy,
+        )
+
+        if not chunks_text:
+            _update_ingestion_status(
+                reservation_id=reservation_id,
+                reservation_token=reservation_token,
+                status="failed",
+                chunk_count=0,
+                status_detail="Nenhum chunk gerado. Texto vazio ou muito curto.",
+            )
+            return {
+                "success": False,
+                "error": "Nenhum chunk gerado. Texto vazio ou muito curto.",
+                "chunks_created": 0,
+                "chunks_processed": 0,
+                "chunks_inserted": 0,
+                "chunks_updated": 0,
+                **quality_report,
+            }
+
+        # ---- Etapa 2: Embeddings ----
+        # Gera embeddings para todos os chunks em uma chamada batch
+        vectors = embed_texts(chunks_text)
+
+        # Monta a lista de chunks com metadados para o upsert
+        chunks_with_embeddings = []
+        for i, (chunk_text, vector) in enumerate(zip(chunks_text, vectors)):
+            chunks_with_embeddings.append({
+                "content": chunk_text,
+                "embedding": vector,
+                "metadata": _build_chunk_metadata(
+                    agent_id=agent_id,
+                    source=source,
+                    doc_type=normalized_doc_type,
+                    chunk_index=i,
+                    strategy=resolved_strategy,
+                    chunk_text=chunk_text,
+                ),
+            })
+
+        # ---- Etapa 3: Upsert no Supabase ----
+        upsert_stats = upsert_chunks(table_name, chunks_with_embeddings)
+
+        # ---- Etapa 4: Finaliza rastreabilidade (Hetzner) ----
+        _update_ingestion_status(
+            reservation_id=reservation_id,
+            reservation_token=reservation_token,
+            status="ingested",
+            chunk_count=upsert_stats["processed"],
+            status_detail=(
+                f"inserted={upsert_stats['inserted']};updated={upsert_stats['updated']}"
+            ),
+        )
+
+        # Se nao conseguiu reservar (ambiente sem migracao), mantem log classico
+        if not reservation_id and not reservation_token:
+            _log_ingestion(
+                table_name=table_name,
+                agent_id=agent_id,
+                source=source,
+                doc_type=normalized_doc_type,
+                chunk_count=upsert_stats["processed"],
+                status="ingested",
+                file_hash=file_hash,
+                source_size_bytes=source_size_bytes,
+            )
+
+        # ---- Etapa 5: Retorna estatísticas ----
+        elapsed_ms = int(
+            (datetime.utcnow() - start_time).total_seconds() * 1000
+        )
+
         return {
-            "success": False,
-            "error": "Nenhum chunk gerado. Texto vazio ou muito curto.",
-            "chunks_created": 0,
+            "success": True,
+            "chunks_created": upsert_stats["processed"],
+            "chunks_processed": upsert_stats["processed"],
+            "chunks_inserted": upsert_stats["inserted"],
+            "chunks_updated": upsert_stats["updated"],
+            "table_name": table_name,
+            "agent_id": agent_id,
+            "source": source,
+            "doc_type": normalized_doc_type,
+            "strategy": resolved_strategy,
+            "processing_time_ms": elapsed_ms,
+            "file_hash": file_hash,
+            **quality_report,
         }
-    
-    # ---- Etapa 2: Embeddings ----
-    # Gera embeddings para todos os chunks em uma chamada batch
-    vectors = embed_texts(chunks_text)
-    
-    # Monta a lista de chunks com metadados para o upsert
-    chunks_with_embeddings = []
-    for i, (chunk_text, vector) in enumerate(zip(chunks_text, vectors)):
-        chunks_with_embeddings.append({
-            "content": chunk_text,
-            "embedding": vector,
-            "metadata": {
-                "agent_id": agent_id,
-                "source": source,
-                "doc_type": doc_type,
-                "chunk_index": i,
-                "strategy": resolved_strategy,
-                "ingested_at": datetime.utcnow().isoformat(),
-            },
-        })
-    
-    # ---- Etapa 3: Upsert no Supabase ----
-    chunks_saved = upsert_chunks(table_name, chunks_with_embeddings)
-    
-    # ---- Etapa 4: Log de rastreabilidade (Hetzner) ----
-    # Registra na tabela ingested_documents para saber:
-    # - Quais documentos foram ingeridos
-    # - Quando e em qual tabela
-    # - Quantos chunks geraram
-    _log_ingestion(
-        table_name=table_name,
-        agent_id=agent_id,
-        source=source,
-        doc_type=doc_type,
-        chunk_count=chunks_saved,
-        status="ingested",
-        file_hash=file_hash,
-        source_size_bytes=source_size_bytes,
-    )
-    
-    # ---- Etapa 5: Retorna estatísticas ----
-    elapsed_ms = int(
-        (datetime.utcnow() - start_time).total_seconds() * 1000
-    )
-    
-    return {
-        "success": True,
-        "chunks_created": chunks_saved,
-        "table_name": table_name,
-        "source": source,
-        "doc_type": doc_type,
-        "strategy": resolved_strategy,
-        "processing_time_ms": elapsed_ms,
-        "file_hash": file_hash,
-    }
+    except Exception as e:
+        _update_ingestion_status(
+            reservation_id=reservation_id,
+            reservation_token=reservation_token,
+            status="failed",
+            chunk_count=0,
+            status_detail=f"Erro na ingestao: {str(e)[:900]}",
+        )
+        raise
 
 
 def _log_ingestion(

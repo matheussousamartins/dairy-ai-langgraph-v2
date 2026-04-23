@@ -1,23 +1,23 @@
 """
-server/webapp.py — Servidor FastAPI com os 7 endpoints
+server/webapp.py â€” Servidor FastAPI com os 7 endpoints
 
-Este é o ponto de entrada HTTP do sistema. Expõe os mesmos endpoints
-que o N8N, com o mesmo contrato de API — o app React Native funciona
+Este Ã© o ponto de entrada HTTP do sistema. ExpÃµe os mesmos endpoints
+que o N8N, com o mesmo contrato de API â€” o app React Native funciona
 com qualquer backend sem mudar uma linha.
 
 No projeto original do curso (app/server/webapp.py), o servidor tem
 apenas 2 endpoints:
-  - POST /chat → chama o agente principal
-  - GET /stream → streaming via SSE
+  - POST /chat â†’ chama o agente principal
+  - GET /stream â†’ streaming via SSE
 
 Aqui temos:
-  - POST /webhook/agente-{id} → chama o agente especialista (6 endpoints)
-  - POST /webhook/orquestrador → chama o orquestrador (1 endpoint)
-  - POST /webhook/ingestao → ingestão de documentos
-  - GET /health → status do sistema
+  - POST /webhook/agente-{id} â†’ chama o agente especialista (6 endpoints)
+  - POST /webhook/orquestrador â†’ chama o orquestrador (1 endpoint)
+  - POST /webhook/ingestao â†’ ingestÃ£o de documentos
+  - GET /health â†’ status do sistema
 
 Os URLs usam /webhook/ para manter compatibilidade com o N8N.
-O app React Native já está configurado para chamar esses endpoints.
+O app React Native jÃ¡ estÃ¡ configurado para chamar esses endpoints.
 Para trocar de N8N para LangGraph, basta mudar a Base URL no app.
 
 Request/Response:
@@ -29,13 +29,15 @@ Request/Response:
   Response:
     { "response": "...", "agent_id": 1, "agent_name": "Tecnologia de Queijos" }
 
-Diferença do original:
+DiferenÃ§a do original:
   O original usa result.get("structured_response") para extrair a
-  resposta, que é o formato específico do CRM. Aqui usamos o formato
-  do contrato de API de laticínios (response, agent_id, agent_name).
+  resposta, que Ã© o formato especÃ­fico do CRM. Aqui usamos o formato
+  do contrato de API de laticÃ­nios (response, agent_id, agent_name).
 """
 
 import json
+import re
+import hashlib
 import secrets
 import time
 from typing import Any, Dict, Optional
@@ -59,7 +61,7 @@ from app.config import (
     validate_config,
 )
 from app.db.connection import init_pools, close_pools
-from app.db.memory import load_memory, save_chat_turn
+from app.db.memory import load_memory, save_chat_turn, save_routing_log
 from app.agents.base_agent import get_agent_graph, get_all_agent_graphs
 from app.agents.orchestrator import get_orchestrator_graph
 from app.agents.agent_config import get_agent_by_id
@@ -75,34 +77,34 @@ async def lifespan(app: FastAPI):
     """Gerencia o ciclo de vida do servidor.
     
     Startup (antes de aceitar requests):
-      1. Valida configuração (chaves, URLs)
-      2. Inicializa pools de conexão com os bancos
-      3. Pré-compila os grafos dos agentes (aquece o cache)
+      1. Valida configuraÃ§Ã£o (chaves, URLs)
+      2. Inicializa pools de conexÃ£o com os bancos
+      3. PrÃ©-compila os grafos dos agentes (aquece o cache)
     
     Shutdown (ao parar o servidor):
-      1. Fecha pools de conexão (libera recursos no banco)
+      1. Fecha pools de conexÃ£o (libera recursos no banco)
     
-    No original, não há lifecycle — as conexões são abertas
-    sob demanda e nunca fechadas explicitamente. Aqui é mais
-    robusto: pools são abertos no início e fechados no fim.
+    No original, nÃ£o hÃ¡ lifecycle â€” as conexÃµes sÃ£o abertas
+    sob demanda e nunca fechadas explicitamente. Aqui Ã© mais
+    robusto: pools sÃ£o abertos no inÃ­cio e fechados no fim.
     
-    O @asynccontextmanager é o padrão moderno do FastAPI para
+    O @asynccontextmanager Ã© o padrÃ£o moderno do FastAPI para
     lifecycle (substituiu os eventos on_startup/on_shutdown).
-    Tudo antes do yield é startup, tudo depois é shutdown.
+    Tudo antes do yield Ã© startup, tudo depois Ã© shutdown.
     """
     # --- STARTUP ---
-    print("[server] Validando configuração...")
+    print("[server] Validando configuraÃ§Ã£o...")
     validate_config()
     
-    print("[server] Inicializando pools de conexão...")
+    print("[server] Inicializando pools de conexÃ£o...")
     init_pools()
     
-    print("[server] Pré-compilando grafos dos agentes...")
+    print("[server] PrÃ©-compilando grafos dos agentes...")
     get_all_agent_graphs()      # Compila os 6 agentes
     get_orchestrator_graph()     # Compila o orquestrador
     
     print("[server] Servidor pronto!")
-    print(f"[server] Endpoints disponíveis:")
+    print(f"[server] Endpoints disponÃ­veis:")
     print(f"  POST /webhook/agente-{{0..6}}")
     print(f"  POST /webhook/orquestrador")
     print(f"  POST /webhook/ingestao")
@@ -112,7 +114,7 @@ async def lifespan(app: FastAPI):
     yield  # Servidor rodando e aceitando requests
     
     # --- SHUTDOWN ---
-    print("[server] Fechando pools de conexão...")
+    print("[server] Fechando pools de conexÃ£o...")
     close_pools()
     print("[server] Servidor encerrado.")
 
@@ -123,16 +125,16 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="DairyApp AI",
-    description="Sistema multi-agente para tecnologia de laticínios",
+    description="Sistema multi-agente para tecnologia de laticÃ­nios",
     version="1.0.0",
     lifespan=lifespan,
 )
 
-# CORS: aceita requests de qualquer origem (necessário para o
+# CORS: aceita requests de qualquer origem (necessÃ¡rio para o
 # console de teste na Vercel e para o app React Native).
-# Em produção, restrinja para os domínios do app.
+# Em produÃ§Ã£o, restrinja para os domÃ­nios do app.
 #
-# No original, não há configuração de CORS. Aqui adicionamos
+# No original, nÃ£o hÃ¡ configuraÃ§Ã£o de CORS. Aqui adicionamos
 # porque o console de teste faz requests cross-origin.
 app.add_middleware(
     CORSMiddleware,
@@ -150,17 +152,21 @@ app.add_middleware(
 class ChatRequest(BaseModel):
     """Schema do body do request de chat.
     
-    Idêntico ao contrato documentado no API-Laticinios-AI-v1.1.docx.
+    IdÃªntico ao contrato documentado no API-Laticinios-AI-v1.1.docx.
     O Pydantic valida automaticamente: se faltar "message", retorna
     HTTP 422 com mensagem de erro clara.
     
-    No original (webapp.py), o body é lido como dict genérico:
+    No original (webapp.py), o body Ã© lido como dict genÃ©rico:
       body = await req.json()
       text = body.get("input")
-    Aqui usamos Pydantic para validação automática.
+    Aqui usamos Pydantic para validaÃ§Ã£o automÃ¡tica.
     """
     message: str
-    session_id: str
+    # Convencao de integracao: session_id deve ser o chatId do app.
+    session_id: Optional[str] = None
+    # Aceita chat_id/chatId para facilitar integracao com Message Service.
+    chat_id: Optional[str] = None
+    chatId: Optional[str] = None
     user_profile: Optional[Dict[str, Any]] = None
 
 
@@ -168,9 +174,9 @@ class ChatResponse(BaseModel):
     """Schema do body da response de chat.
     
     Campos:
-      response: Texto da resposta do agente (para exibir ao usuário).
+      response: Texto da resposta do agente (para exibir ao usuÃ¡rio).
       agent_id: ID do agente que respondeu (0 = base/orquestrador; 1-6 = especialistas).
-      agent_name: Nome legível do agente.
+      agent_name: Nome legÃ­vel do agente.
     """
     response: str
     agent_id: int
@@ -178,9 +184,9 @@ class ChatResponse(BaseModel):
 
 
 class IngestRequest(BaseModel):
-    """Schema do body do request de ingestão.
+    """Schema do body do request de ingestÃ£o.
     
-    Idêntico ao contrato do pipeline de ingestão do N8N.
+    IdÃªntico ao contrato do pipeline de ingestÃ£o do N8N.
     """
     text: str
     table_name: str
@@ -220,15 +226,142 @@ def _load_history_safe(session_id: str) -> list[dict[str, str]]:
         print(f"[memory] Aviso: falha ao carregar historico ({session_id}): {e}")
         return []
 
+
+def _resolve_session_id(request: ChatRequest) -> str:
+    """Resolve o identificador de conversa sem transformar o valor.
+
+    Regra:
+    - usar `session_id` quando presente
+    - fallback para `chat_id`/`chatId`
+    - ambos devem representar o chatId do app (UUID/string estavel)
+    """
+    session_id = (request.session_id or request.chat_id or request.chatId or "").strip()
+    if not session_id:
+        raise HTTPException(
+            status_code=422,
+            detail="session_id (ou chat_id) e obrigatorio",
+        )
+    return session_id
+
 def _inject_user_profile(message: str, user_profile: Optional[Dict[str, Any]]) -> str:
     if not user_profile:
         return message
     profile_text = (
-        f"\n[Perfil do usuário: "
-        f"nível={user_profile.get('knowledgeLevel', 'INTERMEDIATE')}, "
-        f"função={user_profile.get('role', 'não informado')}]"
+        f"\n[Perfil do usuÃ¡rio: "
+        f"nÃ­vel={user_profile.get('knowledgeLevel', 'INTERMEDIATE')}, "
+        f"funÃ§Ã£o={user_profile.get('role', 'nÃ£o informado')}]"
     )
     return message + profile_text
+
+
+def _sanitize_math_for_ui(text: str) -> str:
+    """Converte trechos matematicos em LaTeX para texto simples amigavel ao front."""
+    if not text:
+        return text
+
+    out = str(text)
+    out = out.replace("\\n", "\n")
+    out = out.replace("\t", " ")
+
+    # Delimitadores comuns de math mode (incluindo quando vierem incompletos).
+    out = re.sub(r"\\\[(.*?)\\\]", r"\1", out, flags=re.DOTALL)
+    out = re.sub(r"\\\((.*?)\\\)", r"\1", out, flags=re.DOTALL)
+    out = re.sub(r"\$\$(.*?)\$\$", r"\1", out, flags=re.DOTALL)
+    out = re.sub(r"\$(.*?)\$", r"\1", out, flags=re.DOTALL)
+    out = out.replace("\\[", "").replace("\\]", "").replace("\\(", "").replace("\\)", "")
+
+    # Comandos latex usuais em respostas de calculo.
+    out = out.replace("\\times", "x").replace("\\cdot", "x").replace("\\,", " ")
+    out = re.sub(r"\\text\{([^}]*)\}", r"\1", out)
+
+    # Limpeza de comandos residuais sem mexer em acentuacao/UTF-8.
+    out = re.sub(r"\\[a-zA-Z]+", "", out)
+    out = out.replace("{", "").replace("}", "")
+
+    # Remove wrappers [ ... ] usados em blocos matematicos.
+    cleaned_lines = []
+    for line in out.splitlines():
+        s = line.strip()
+        if s.startswith("[") and s.endswith("]") and len(s) >= 2:
+            s = s[1:-1].strip()
+        cleaned_lines.append(s if s else line.strip())
+    out = "\n".join(cleaned_lines)
+
+    out = re.sub(r"[ \t]{2,}", " ", out)
+    out = re.sub(r"\n{3,}", "\n\n", out).strip()
+    return out
+
+
+def _safe_int_list(value: Any) -> list[int]:
+    if not isinstance(value, list):
+        return []
+    out: list[int] = []
+    for item in value:
+        try:
+            aid = int(item)
+        except (TypeError, ValueError):
+            continue
+        if aid not in out:
+            out.append(aid)
+    return out
+
+
+def _build_query_hash(message: str) -> str:
+    normalized = re.sub(r"\s+", " ", (message or "").strip().lower())
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def _estimate_routing_cost_usd(execution_plan: list[int], fallback_attempts: int) -> float:
+    # Estimativa simples e estável para observabilidade operacional.
+    classifier_cost = 0.0005
+    per_agent_call_cost = 0.0015
+    consolidation_cost = 0.0008
+    planned_agents = max(1, len(execution_plan))
+    passes = 1 + max(0, int(fallback_attempts or 0))
+    estimate = classifier_cost + consolidation_cost + (planned_agents * passes * per_agent_call_cost)
+    return round(estimate, 6)
+
+
+def _extract_routing_payload(
+    request_message: str,
+    orchestrator_output: Dict[str, Any],
+    elapsed_ms: int,
+    default_agent_id: int,
+    default_agent_name: str,
+) -> Dict[str, Any]:
+    chosen_ids = _safe_int_list(orchestrator_output.get("chosen_agent_ids"))
+    execution_plan = _safe_int_list(orchestrator_output.get("execution_plan"))
+    selected_ids = execution_plan or chosen_ids
+    routing_alternatives = _safe_int_list(orchestrator_output.get("routing_alternatives"))
+    fallback_attempts = int(orchestrator_output.get("fallback_attempts", 0) or 0)
+    primary_agent_id = int(orchestrator_output.get("primary_agent_id", default_agent_id) or default_agent_id)
+    primary_agent_name = str(orchestrator_output.get("primary_agent_name", default_agent_name) or default_agent_name)
+    routing_confidence = float(orchestrator_output.get("routing_confidence", 0.0) or 0.0)
+    routing_bucket = str(orchestrator_output.get("routing_bucket", "unknown") or "unknown")
+    routing_reason = str(orchestrator_output.get("routing_reason", "") or "")
+    fallback_used = bool(orchestrator_output.get("fallback_used", False))
+    fallback_trigger = str(orchestrator_output.get("fallback_trigger", "") or "")
+    cost_estimate_usd = _estimate_routing_cost_usd(execution_plan=selected_ids, fallback_attempts=fallback_attempts)
+
+    return {
+        "session_id": "",
+        "user_message": request_message,
+        "response_time_ms": int(elapsed_ms),
+        "query_hash": _build_query_hash(request_message),
+        "selected_agent_ids": selected_ids,
+        "chosen_agent_ids": chosen_ids,
+        "execution_plan": execution_plan,
+        "primary_agent_id": primary_agent_id,
+        "primary_agent_name": primary_agent_name,
+        "routing_confidence": routing_confidence,
+        "routing_bucket": routing_bucket,
+        "routing_reason": routing_reason,
+        "routing_alternatives": routing_alternatives,
+        "fallback_used": fallback_used,
+        "fallback_attempts": fallback_attempts,
+        "fallback_trigger": fallback_trigger,
+        "cost_estimate_usd": cost_estimate_usd,
+    }
 
 
 # ============================================================
@@ -243,22 +376,22 @@ async def chat_agent(
 ) -> ChatResponse:
     """Endpoint dos agentes especialistas.
     
-    Recebe a pergunta, carrega o histórico da sessão, chama o
-    grafo do agente, salva a nova mensagem no histórico, registra
+    Recebe a pergunta, carrega o histÃ³rico da sessÃ£o, chama o
+    grafo do agente, salva a nova mensagem no histÃ³rico, registra
     o log, e retorna a resposta.
     
-    Este endpoint faz o que o N8N faz com 8 nós:
-    Webhook → AI Agent → Postgres Chat Memory → Log → Respond
+    Este endpoint faz o que o N8N faz com 8 nÃ³s:
+    Webhook â†’ AI Agent â†’ Postgres Chat Memory â†’ Log â†’ Respond
     
-    Aqui é tudo em código, mas o fluxo é idêntico:
+    Aqui Ã© tudo em cÃ³digo, mas o fluxo Ã© idÃªntico:
     1. Valida o agent_id
-    2. Carrega histórico (load_memory)
-    3. Chama o grafo (get_agent_graph → invoke)
-    4. Salva histórico (save_memory x2)
+    2. Carrega histÃ³rico (load_memory)
+    3. Chama o grafo (get_agent_graph â†’ invoke)
+    4. Salva histÃ³rico (save_memory x2)
     5. Registra log (save_interaction_log)
     6. Retorna response
     
-    Parâmetros da URL:
+    ParÃ¢metros da URL:
       agent_id: 0 a 6 (validado contra agent_config.py)
     
     Body: ChatRequest (message, session_id, user_profile)
@@ -266,25 +399,26 @@ async def chat_agent(
     Response: ChatResponse (response, agent_id, agent_name)
     
     Erros:
-      404: agent_id não existe
+      404: agent_id nÃ£o existe
       500: erro interno no grafo
     """
     _verify_webhook_api_key(_api_key)
     start_time = time.time()
+    session_id = _resolve_session_id(request)
     
     # ---- 1. Validar agent_id ----
     agent_config = get_agent_by_id(agent_id)
     if not agent_config:
         raise HTTPException(
             status_code=404,
-            detail=f"Agente {agent_id} não encontrado. IDs válidos: 0 a 6.",
+            detail=f"Agente {agent_id} nÃ£o encontrado. IDs vÃ¡lidos: 0 a 6.",
         )
     
     agent_name = agent_config["name"]
     
-    # ---- 2. Carregar histórico da sessão ----
+    # ---- 2. Carregar histÃ³rico da sessÃ£o ----
     # Mesma tabela chat_memories que o N8N usa
-    history = await run_in_threadpool(_load_history_safe, request.session_id)
+    history = await run_in_threadpool(_load_history_safe, session_id)
     messages = _history_to_messages(history)
     messages.append(
         HumanMessage(
@@ -297,7 +431,7 @@ async def chat_agent(
         graph = get_agent_graph(agent_id)
         result = await graph.ainvoke({"messages": messages})
         
-        # Extrai a resposta (última AIMessage)
+        # Extrai a resposta (Ãºltima AIMessage)
         response_text = ""
         for msg in reversed(result.get("messages", [])):
             if hasattr(msg, "content") and not hasattr(msg, "tool_calls"):
@@ -310,19 +444,21 @@ async def chat_agent(
                     break
         
     except Exception as e:
-        # Erro no grafo: retorna mensagem amigável
-        # Em produção, logar o erro completo (não print)
+        # Erro no grafo: retorna mensagem amigÃ¡vel
+        # Em produÃ§Ã£o, logar o erro completo (nÃ£o print)
         print(f"[agent-{agent_id}] Erro: {e}")
         response_text = (
-            "Não foi possível processar sua pergunta no momento. "
+            "NÃ£o foi possÃ­vel processar sua pergunta no momento. "
             "Por favor, tente novamente."
         )
     
-    # ---- 4. Salvar no histórico ----
+    response_text = _sanitize_math_for_ui(response_text)
+
+    # ---- 4. Salvar no histÃ³rico ----
     elapsed_ms = int((time.time() - start_time) * 1000)
     await run_in_threadpool(
         save_chat_turn,
-        request.session_id,
+        session_id,
         agent_id,
         agent_name,
         request.message,
@@ -347,19 +483,21 @@ async def chat_orchestrator(
     request: ChatRequest,
     _api_key: Optional[str] = Header(default=None, alias=WEBHOOK_API_KEY_HEADER),
 ) -> ChatResponse:
-    """Endpoint do Assistente Geral (orquestrador) — multi-agente.
+    """Endpoint do Assistente Geral (orquestrador) â€” multi-agente.
     
     O orquestrador pode consultar 1 a 3 agentes por pergunta.
     O response inclui o agent_id do agente PRINCIPAL (mais relevante).
-    Se consultou Agente 3 + Agente 1, o agent_id no response é 3
-    (o primeiro da lista ordenada por relevância).
-    Se foi conversa geral, agent_id é 0.
+    Se consultou Agente 3 + Agente 1, o agent_id no response Ã© 3
+    (o primeiro da lista ordenada por relevÃ¢ncia).
+    Se foi conversa geral, agent_id Ã© 0.
     """
     _verify_webhook_api_key(_api_key)
     start_time = time.time()
+    session_id = _resolve_session_id(request)
+    orchestrator_output: Dict[str, Any] = {}
     
-    # Carrega histórico
-    history = await run_in_threadpool(_load_history_safe, request.session_id)
+    # Carrega histÃ³rico
+    history = await run_in_threadpool(_load_history_safe, session_id)
     messages = _history_to_messages(history)
     messages.append(
         HumanMessage(
@@ -374,32 +512,65 @@ async def chat_orchestrator(
             "messages": messages,
             "user_profile": request.user_profile,
         })
+        orchestrator_output = dict(result or {})
         
-        response_text = result.get("final_response", "")
-        # primary_agent_id é o agente mais relevante da lista
+        response_text = _sanitize_math_for_ui(result.get("final_response", ""))
+        # primary_agent_id Ã© o agente mais relevante da lista
         agent_id = result.get("primary_agent_id", 0)
         agent_name = result.get("primary_agent_name", "Assistente Geral")
         
     except Exception as e:
         print(f"[orquestrador] Erro: {e}")
         response_text = (
-            "Não foi possível processar sua pergunta no momento. "
+            "NÃ£o foi possÃ­vel processar sua pergunta no momento. "
             "Por favor, tente novamente."
         )
         agent_id = 0
         agent_name = "Assistente Geral"
     
-    # Salva histórico e log
+    # Salva histÃ³rico e log
     elapsed_ms = int((time.time() - start_time) * 1000)
     await run_in_threadpool(
         save_chat_turn,
-        request.session_id,
+        session_id,
         agent_id,
         agent_name,
         request.message,
         response_text,
         elapsed_ms,
     )
+
+    try:
+        payload = _extract_routing_payload(
+            request_message=request.message,
+            orchestrator_output=orchestrator_output,
+            elapsed_ms=elapsed_ms,
+            default_agent_id=agent_id,
+            default_agent_name=agent_name,
+        )
+        payload["session_id"] = session_id
+        await run_in_threadpool(
+            save_routing_log,
+            payload["session_id"],
+            payload["user_message"],
+            payload["response_time_ms"],
+            payload["query_hash"],
+            payload["selected_agent_ids"],
+            payload["chosen_agent_ids"],
+            payload["execution_plan"],
+            payload["primary_agent_id"],
+            payload["primary_agent_name"],
+            payload["routing_confidence"],
+            payload["routing_bucket"],
+            payload["routing_reason"],
+            payload["routing_alternatives"],
+            payload["fallback_used"],
+            payload["fallback_attempts"],
+            payload["fallback_trigger"],
+            payload["cost_estimate_usd"],
+        )
+    except Exception as e:
+        print(f"[routing-log] Aviso: falha ao registrar log estruturado: {e}")
     
     return ChatResponse(
         response=response_text,
@@ -420,26 +591,27 @@ async def chat_agent_stream(
 ):
     """Endpoint de streaming SSE para agentes especialistas.
 
-    Emite tokens conforme o LLM gera a resposta — estilo ChatGPT.
+    Emite tokens conforme o LLM gera a resposta â€” estilo ChatGPT.
     Usa graph.astream_events() para capturar chunks do modelo.
 
     Eventos SSE emitidos:
-      data: {"event": "chunk", "text": "..."}   — token(s) da resposta
-      data: {"event": "final", "agent_id": N}   — sinaliza fim do stream
-      data: {"event": "error", "detail": "..."}  — erro durante geração
+      data: {"event": "chunk", "text": "..."}   â€” token(s) da resposta
+      data: {"event": "final", "agent_id": N}   â€” sinaliza fim do stream
+      data: {"event": "error", "detail": "..."}  â€” erro durante geraÃ§Ã£o
     """
     _verify_webhook_api_key(_api_key)
     start_time = time.time()
+    session_id = _resolve_session_id(request)
 
     agent_config = get_agent_by_id(agent_id)
     if not agent_config:
         raise HTTPException(
             status_code=404,
-            detail=f"Agente {agent_id} não encontrado. IDs válidos: 0 a 6.",
+            detail=f"Agente {agent_id} nÃ£o encontrado. IDs vÃ¡lidos: 0 a 6.",
         )
 
     agent_name = agent_config["name"]
-    history = await run_in_threadpool(_load_history_safe, request.session_id)
+    history = await run_in_threadpool(_load_history_safe, session_id)
     messages = _history_to_messages(history)
     messages.append(
         HumanMessage(
@@ -450,7 +622,8 @@ async def chat_agent_stream(
     graph = get_agent_graph(agent_id)
 
     async def generate():
-        accumulated = ""
+        accumulated_raw = ""
+        emitted_clean = ""
         try:
             async for event in graph.astream_events({"messages": messages}, version="v2"):
                 ev = event["event"]
@@ -463,10 +636,15 @@ async def chat_agent_stream(
                     content = chunk.content if isinstance(chunk.content, str) else ""
                     tool_calls = getattr(chunk, "tool_call_chunks", [])
                     if content and not tool_calls:
-                        accumulated += content
-                        yield f"data: {json.dumps({'event': 'chunk', 'text': content})}\n\n"
+                        accumulated_raw += content
+                        cleaned = _sanitize_math_for_ui(accumulated_raw)
+                        if len(cleaned) > len(emitted_clean):
+                            delta = cleaned[len(emitted_clean):]
+                            emitted_clean = cleaned
+                            if delta:
+                                yield f"data: {json.dumps({'event': 'chunk', 'text': delta})}\n\n"
 
-                # Transições de nó — apenas eventos de nível raiz do LangGraph
+                # TransiÃ§Ãµes de nÃ³ â€” apenas eventos de nÃ­vel raiz do LangGraph
                 # (event["name"] == node filtra sub-chains internas)
                 elif ev == "on_chain_start" and node and node != "__start__" and event.get("name") == node:
                     yield f"data: {json.dumps({'event': 'trace', 'type': 'node_start', 'node': node, 'ts': ts})}\n\n"
@@ -480,11 +658,11 @@ async def chat_agent_stream(
                     query = raw_input.get("query", str(raw_input)) if isinstance(raw_input, dict) else str(raw_input)
                     yield f"data: {json.dumps({'event': 'trace', 'type': 'tool_call', 'tool': tool_name, 'input': query[:400], 'ts': ts})}\n\n"
 
-                # Resultado da ferramenta — extrai chunks do JSON
+                # Resultado da ferramenta â€” extrai chunks do JSON
                 elif ev == "on_tool_end":
                     tool_name = event.get("name", "tool")
                     raw_output = event["data"].get("output", "")
-                    # Extrai conteúdo do ToolMessage (formato: content='[{...}]')
+                    # Extrai conteÃºdo do ToolMessage (formato: content='[{...}]')
                     output_str = raw_output.content if hasattr(raw_output, "content") else str(raw_output)
                     try:
                         chunks = json.loads(output_str) if isinstance(output_str, str) else output_str
@@ -506,10 +684,16 @@ async def chat_agent_stream(
             yield f"data: {json.dumps({'event': 'error', 'detail': str(e)})}\n\n"
             return
 
+        accumulated = _sanitize_math_for_ui(accumulated_raw)
+        if len(accumulated) > len(emitted_clean):
+            delta = accumulated[len(emitted_clean):]
+            if delta:
+                yield f"data: {json.dumps({'event': 'chunk', 'text': delta})}\n\n"
+
         elapsed_ms = int((time.time() - start_time) * 1000)
         await run_in_threadpool(
             save_chat_turn,
-            request.session_id,
+            session_id,
             agent_id,
             agent_name,
             request.message,
@@ -538,8 +722,9 @@ async def chat_orchestrator_stream(
     """Endpoint de streaming SSE para o orquestrador."""
     _verify_webhook_api_key(_api_key)
     start_time = time.time()
+    session_id = _resolve_session_id(request)
 
-    history = await run_in_threadpool(_load_history_safe, request.session_id)
+    history = await run_in_threadpool(_load_history_safe, session_id)
     messages = _history_to_messages(history)
     messages.append(
         HumanMessage(
@@ -553,8 +738,9 @@ async def chat_orchestrator_stream(
         accumulated = ""
         agent_id = 0
         agent_name = "Assistente Geral"
-        # Nós que geram a resposta final visível ao usuário.
-        # "classify" é excluído pois emite JSON interno de roteamento.
+        orchestrator_output: Dict[str, Any] = {}
+        # NÃ³s que geram a resposta final visÃ­vel ao usuÃ¡rio.
+        # "classify" Ã© excluÃ­do pois emite JSON interno de roteamento.
         RESPONSE_NODES = {"respond_direct", "consolidate"}
         # Captura o final_response quando consolidate retorna direto (sem LLM)
         fallback_response = ""
@@ -568,25 +754,27 @@ async def chat_orchestrator_stream(
                 node = event.get("metadata", {}).get("langgraph_node", "")
                 ts = int(time.time() * 1000)
 
-                # Tokens da resposta final (apenas nós de resposta)
+                # Tokens da resposta final (apenas nÃ³s de resposta)
                 if ev == "on_chat_model_stream" and node in RESPONSE_NODES:
                     chunk = event["data"]["chunk"]
                     content = chunk.content if isinstance(chunk.content, str) else ""
                     tool_calls = getattr(chunk, "tool_call_chunks", [])
                     if content and not tool_calls:
                         accumulated += content
-                        yield f"data: {json.dumps({'event': 'chunk', 'text': content})}\n\n"
+                        # Nao envia chunk bruto para o front; o texto sera emitido
+                        # uma vez no final, ja sanitizado para evitar LaTeX cru na UI.
 
-                # Captura agent_id final e fallback quando não houve streaming
+                # Captura agent_id final e fallback quando nÃ£o houve streaming
                 # (ex: consolidate com 1 agente retorna direto, sem chamar LLM)
                 elif ev == "on_chain_end" and event.get("name") == "LangGraph":
                     output = event.get("data", {}).get("output", {})
+                    orchestrator_output = dict(output or {})
                     agent_id = output.get("primary_agent_id", 0)
                     agent_name = output.get("primary_agent_name", "Assistente Geral")
                     if not accumulated:
                         fallback_response = output.get("final_response", "")
 
-                # Transições de nó — apenas nível raiz
+                # TransiÃ§Ãµes de nÃ³ â€” apenas nÃ­vel raiz
                 elif ev == "on_chain_start" and node and node != "__start__" and event.get("name") == node:
                     yield f"data: {json.dumps({'event': 'trace', 'type': 'node_start', 'node': node, 'ts': ts})}\n\n"
                 elif ev == "on_chain_end" and node and node != "__start__" and event.get("name") == node:
@@ -622,23 +810,56 @@ async def chat_orchestrator_stream(
             yield f"data: {json.dumps({'event': 'error', 'detail': str(e)})}\n\n"
             return
 
-        # Fallback: consolidate retornou direto (1 agente, sem LLM).
-        # Nenhum chunk foi emitido — envia o texto completo como um único chunk
-        # para que o frontend e o route.ts consigam capturá-lo.
+        # Emite resposta final unica, sanitizada para UI (sem LaTeX cru).
         if not accumulated and fallback_response:
             accumulated = fallback_response
-            yield f"data: {json.dumps({'event': 'chunk', 'text': fallback_response})}\n\n"
+        if accumulated:
+            cleaned = _sanitize_math_for_ui(accumulated)
+            accumulated = cleaned
+            yield f"data: {json.dumps({'event': 'chunk', 'text': cleaned})}\n\n"
 
         elapsed_ms = int((time.time() - start_time) * 1000)
         await run_in_threadpool(
             save_chat_turn,
-            request.session_id,
+            session_id,
             agent_id,
             agent_name,
             request.message,
             accumulated,
             elapsed_ms,
         )
+
+        try:
+            payload = _extract_routing_payload(
+                request_message=request.message,
+                orchestrator_output=orchestrator_output,
+                elapsed_ms=elapsed_ms,
+                default_agent_id=agent_id,
+                default_agent_name=agent_name,
+            )
+            payload["session_id"] = session_id
+            await run_in_threadpool(
+                save_routing_log,
+                payload["session_id"],
+                payload["user_message"],
+                payload["response_time_ms"],
+                payload["query_hash"],
+                payload["selected_agent_ids"],
+                payload["chosen_agent_ids"],
+                payload["execution_plan"],
+                payload["primary_agent_id"],
+                payload["primary_agent_name"],
+                payload["routing_confidence"],
+                payload["routing_bucket"],
+                payload["routing_reason"],
+                payload["routing_alternatives"],
+                payload["fallback_used"],
+                payload["fallback_attempts"],
+                payload["fallback_trigger"],
+                payload["cost_estimate_usd"],
+            )
+        except Exception as e:
+            print(f"[routing-log] Aviso: falha ao registrar log estruturado: {e}")
 
         yield f"data: {json.dumps({'event': 'final', 'agent_id': agent_id, 'agent_name': agent_name})}\n\n"
 
@@ -658,17 +879,17 @@ async def ingest_document(
     request: IngestRequest,
     _api_key: Optional[str] = Header(default=None, alias=WEBHOOK_API_KEY_HEADER),
 ):
-    """Endpoint de ingestão de documentos.
+    """Endpoint de ingestÃ£o de documentos.
     
-    Recebe texto já processado (Markdown limpo) e executa:
-    chunking → embeddings → upsert no Supabase → log no Hetzner.
+    Recebe texto jÃ¡ processado (Markdown limpo) e executa:
+    chunking â†’ embeddings â†’ upsert no Supabase â†’ log no Hetzner.
     
-    Mesmo contrato que o pipeline de ingestão do N8N.
-    O form de ingestão (N8N) ou o app web podem chamar este endpoint.
+    Mesmo contrato que o pipeline de ingestÃ£o do N8N.
+    O form de ingestÃ£o (N8N) ou o app web podem chamar este endpoint.
     
     Body: IngestRequest (text, table_name, agent_id, source, doc_type)
     
-    Response: estatísticas da ingestão
+    Response: estatÃ­sticas da ingestÃ£o
     """
     _verify_webhook_api_key(_api_key)
     try:
@@ -684,7 +905,7 @@ async def ingest_document(
         print(f"[ingestao] Erro: {e}")
         raise HTTPException(
             status_code=500,
-            detail=f"Erro na ingestão: {str(e)}",
+            detail=f"Erro na ingestÃ£o: {str(e)}",
         )
 
 
@@ -693,16 +914,17 @@ async def ingest_document_file(
     file: UploadFile = File(...),
     agent_id: int = Form(...),
     doc_type: str = Form("manual"),
+    table_name: Optional[str] = Form(default=None),
     _api_key: Optional[str] = Header(default=None, alias=WEBHOOK_API_KEY_HEADER),
 ):
-    """Ingestão via upload de arquivo (multipart/form-data).
+    """Ingestao via upload de arquivo (multipart/form-data).
 
     Fluxo inicial para o webapp:
       - aceita `.md` e `.txt` diretamente
       - mapeia `agent_id` para a tabela de embeddings correta
-      - executa deduplicação por hash + ingestão
+      - executa deduplicacao por hash + ingestao
 
-    Para PDF/DOCX, a recomendação atual é converter para Markdown
+    Para PDF/DOCX, a recomendacao atual e converter para Markdown
     antes de enviar.
     """
     _verify_webhook_api_key(_api_key)
@@ -710,7 +932,17 @@ async def ingest_document_file(
     if not agent_config:
         raise HTTPException(
             status_code=404,
-            detail=f"Agente {agent_id} não encontrado. IDs válidos: 0 a 6.",
+            detail=f"Agente {agent_id} nao encontrado. IDs validos: 0 a 6.",
+        )
+
+    resolved_table_name = agent_config["table_name"]
+    if table_name and table_name != resolved_table_name:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "table_name divergente do agent_id informado. "
+                f"Para agent_id={agent_id}, use table_name='{resolved_table_name}'."
+            ),
         )
 
     filename = file.filename or "upload"
@@ -719,8 +951,8 @@ async def ingest_document_file(
         raise HTTPException(
             status_code=400,
             detail=(
-                "Formato não suportado no upload direto. "
-                "Envie .md/.txt ou converta para Markdown antes da ingestão."
+                "Formato nao suportado no upload direto. "
+                "Envie .md/.txt ou converta para Markdown antes da ingestao."
             ),
         )
 
@@ -747,17 +979,20 @@ async def ingest_document_file(
     try:
         result = ingest_text(
             text=text,
-            table_name=agent_config["table_name"],
+            table_name=resolved_table_name,
             agent_id=agent_id,
             source=filename,
             doc_type=doc_type,
         )
+        result["resolved_agent_id"] = agent_id
+        result["resolved_agent_name"] = agent_config["name"]
+        result["resolved_table_name"] = resolved_table_name
         return result
     except Exception as e:
         print(f"[ingestao-arquivo] Erro: {e}")
         raise HTTPException(
             status_code=500,
-            detail=f"Erro na ingestão de arquivo: {str(e)}",
+            detail=f"Erro na ingestao de arquivo: {str(e)}",
         )
 
 
@@ -769,15 +1004,15 @@ async def ingest_document_file(
 async def health():
     """Endpoint de health check.
     
-    Verifica se o servidor está rodando e os bancos estão acessíveis.
+    Verifica se o servidor estÃ¡ rodando e os bancos estÃ£o acessÃ­veis.
     Usado por load balancers, monitoring, e Docker health checks.
     
     Retorna:
       { "status": "ok", "agents": 7, "version": "1.0.0" }
     
-    Não existe no projeto original (o original não tem health check).
+    NÃ£o existe no projeto original (o original nÃ£o tem health check).
     """
-    # Verificação básica: tenta conectar nos dois bancos
+    # VerificaÃ§Ã£o bÃ¡sica: tenta conectar nos dois bancos
     status = "ok"
     details = {}
     
@@ -821,3 +1056,4 @@ if __name__ == "__main__":
         port=SERVER_PORT,
         reload=True,  # Hot reload durante desenvolvimento
     )
+

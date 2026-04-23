@@ -166,6 +166,34 @@ HYDE_LLM_MODEL = os.getenv("HYDE_LLM_MODEL", "gpt-4o-mini")
 
 
 # ============================================================
+# QUERY REWRITING â€” Expansao de consulta (opcional)
+# ============================================================
+# Gera variacoes tecnicas da pergunta antes da busca no RAG.
+# Trade-off: melhora recall para perguntas mal formuladas, mas adiciona
+# 1 chamada LLM por busca e multiplica o numero de buscas no banco.
+USE_QUERY_REWRITE = os.getenv("USE_QUERY_REWRITE", "false").strip().lower() == "true"
+QUERY_REWRITE_MODEL = os.getenv("QUERY_REWRITE_MODEL", "gpt-4o-mini")
+# Quantidade de variacoes alem da query original.
+QUERY_REWRITE_VARIANTS = int(os.getenv("QUERY_REWRITE_VARIANTS", "2"))
+
+# Filtros de qualidade no retrieval (evita chunk lixo tipo "." ou tabela quebrada)
+RAG_MIN_CHUNK_CHARS = int(os.getenv("RAG_MIN_CHUNK_CHARS", "60"))
+RAG_MIN_ALNUM_RATIO = float(os.getenv("RAG_MIN_ALNUM_RATIO", "0.25"))
+
+# Segunda passada de retrieval (fallback de cobertura).
+# Quando ativada, e a primeira busca vier fraca, roda uma segunda busca
+# mais ampla para aumentar recall antes de devolver os chunks finais.
+RAG_SECOND_PASS_ENABLED = os.getenv("RAG_SECOND_PASS_ENABLED", "false").strip().lower() == "true"
+RAG_SECOND_PASS_MIN_RESULTS = int(os.getenv("RAG_SECOND_PASS_MIN_RESULTS", "3"))
+RAG_SECOND_PASS_MIN_KEYWORD_HITS = int(os.getenv("RAG_SECOND_PASS_MIN_KEYWORD_HITS", "1"))
+RAG_SECOND_PASS_EXPAND_FACTOR = float(os.getenv("RAG_SECOND_PASS_EXPAND_FACTOR", "2.5"))
+RAG_SECOND_PASS_MAX_K = int(os.getenv("RAG_SECOND_PASS_MAX_K", "20"))
+RAG_SECOND_PASS_FORCE_HYBRID = os.getenv("RAG_SECOND_PASS_FORCE_HYBRID", "true").strip().lower() == "true"
+RAG_SECOND_PASS_DISABLE_THRESHOLD = os.getenv("RAG_SECOND_PASS_DISABLE_THRESHOLD", "true").strip().lower() == "true"
+RAG_SECOND_PASS_USE_QUERY_REWRITE = os.getenv("RAG_SECOND_PASS_USE_QUERY_REWRITE", "true").strip().lower() == "true"
+
+
+# ============================================================
 # CHAT MEMORY â€” ConfiguraÃ§Ãµes de memÃ³ria de conversa
 # ============================================================
 
@@ -224,6 +252,7 @@ CHUNK_SIZES = {
     "manual":        (1200, 250),  # SeÃ§Ãµes tÃ©cnicas longas, contexto amplo
     "artigo":        (1000, 200),  # Papers acadÃªmicos, parÃ¡grafos mÃ©dios
     "faq":           (500, 50),    # Perguntas e respostas curtas
+    "glossario":     (220, 20),    # Entradas curtas: granularidade por termo
     "formulacao":    (800, 150),   # Receitas e fÃ³rmulas
     "ficha_tecnica": (600, 100),   # Fichas de ingredientes
 }
@@ -231,6 +260,23 @@ CHUNK_SIZES = {
 # Tamanho padrÃ£o se o tipo do documento nÃ£o estiver no dicionÃ¡rio acima.
 DEFAULT_CHUNK_SIZE = int(os.getenv("DEFAULT_CHUNK_SIZE", "1000"))
 DEFAULT_CHUNK_OVERLAP = int(os.getenv("DEFAULT_CHUNK_OVERLAP", "200"))
+
+
+# ============================================================
+# QUALITY GATE DE INGESTAO
+# ============================================================
+# Evita ingerir arquivos extraidos com baixa qualidade (OCR ruim,
+# texto muito curto, encoding quebrado etc.).
+INGEST_BLOCK_LOW_QUALITY = os.getenv("INGEST_BLOCK_LOW_QUALITY", "true").strip().lower() == "true"
+INGEST_MIN_TEXT_CHARS = int(os.getenv("INGEST_MIN_TEXT_CHARS", "400"))
+INGEST_MIN_WORDS = int(os.getenv("INGEST_MIN_WORDS", "80"))
+INGEST_MAX_GARBLED_RATIO = float(os.getenv("INGEST_MAX_GARBLED_RATIO", "0.08"))
+INGEST_MIN_QUALITY_SCORE = float(os.getenv("INGEST_MIN_QUALITY_SCORE", "60"))
+# Overrides para documentos de glossario (curtos/tabulares)
+INGEST_MIN_TEXT_CHARS_GLOSSARIO = int(
+    os.getenv("INGEST_MIN_TEXT_CHARS_GLOSSARIO", "250")
+)
+INGEST_MIN_WORDS_GLOSSARIO = int(os.getenv("INGEST_MIN_WORDS_GLOSSARIO", "30"))
 
 
 # ============================================================

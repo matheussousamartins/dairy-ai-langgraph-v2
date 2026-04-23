@@ -95,6 +95,13 @@ def init_pools() -> None:
             kwargs={
                 "autocommit": True,     # Cada query é um commit automático
                                         # (não precisamos de transações longas)
+                # TCP keepalives: evita que o Supabase Session Pooler feche
+                # conexões inativas durante ingestões longas (OpenAI pode
+                # levar 30-60s, deixando a conexão idle nesse período).
+                "keepalives": 1,
+                "keepalives_idle": 20,      # Envia keepalive após 20s idle
+                "keepalives_interval": 5,   # Reenvio a cada 5s sem resposta
+                "keepalives_count": 5,      # Desiste após 5 tentativas falhas
             },
         )
     

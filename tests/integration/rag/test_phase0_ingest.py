@@ -69,11 +69,15 @@ def test_ingest_smoke(db_supabase, require_openai):
                     updated_at TIMESTAMPTZ DEFAULT NOW()
                 )
             """)
-            cur.execute(f"""
-                ALTER TABLE {TABLE}
-                ADD CONSTRAINT IF NOT EXISTS uq_smoke_hash 
-                UNIQUE (content_hash)
-            """)
+            try:
+                cur.execute(f"""
+                    ALTER TABLE {TABLE}
+                    ADD CONSTRAINT uq_smoke_hash 
+                    UNIQUE (content_hash)
+                """)
+            except psycopg.errors.DuplicateObject:
+                # Constraint já existe de execução anterior; segue normalmente.
+                pass
     
     # Executa ingestão
     result = ingest_text(

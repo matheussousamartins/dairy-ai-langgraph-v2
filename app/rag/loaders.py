@@ -44,6 +44,7 @@ entre dois chunks não se percam.
 
 from pathlib import Path
 from typing import List, Dict, Any, Tuple, Optional
+import re
 
 from langchain_text_splitters import (
     RecursiveCharacterTextSplitter,
@@ -154,6 +155,8 @@ def split_markdown(
     text: str,
     chunk_size: int = 800,
     chunk_overlap: int = 200,
+    max_section_ratio: float = 1.5,
+    max_section_chars: Optional[int] = None,
 ) -> List[str]:
     """Divide texto usando a estrutura de cabeçalhos Markdown.
     
@@ -189,23 +192,25 @@ def split_markdown(
     # e como identificá-los nos metadados
     splitter = MarkdownHeaderTextSplitter(
         headers_to_split_on=[
-            ("#", "h1"),     # Título principal
-            ("##", "h2"),    # Seção
-            ("###", "h3"),   # Subseção
+            ("#", "h1"),      # Título principal
+            ("##", "h2"),     # Seção
+            ("###", "h3"),    # Subseção
+            ("####", "h4"),   # Sub-subseção (ex: PRINCÍPIO, REAGENTES, PROCEDIMENTO por método)
         ]
     )
-    
+
     # split_text retorna objetos Document do LangChain,
     # cada um com .page_content (texto) e .metadata (cabeçalhos)
     docs = splitter.split_text(text)
-    
+
     # Monta cada chunk com o caminho de cabeçalhos como prefixo
     chunks = []
     for doc in docs:
         # Extrai os cabeçalhos do metadata
-        # Ex: {"h1": "Mussarela", "h2": "Filagem"} → "Mussarela > Filagem"
+        # Ex: {"h1": "IN 68", "h2": "ACIDEZ", "h3": "Método A", "h4": "REAGENTES"}
+        #     → "IN 68 > ACIDEZ > Método A > REAGENTES"
         headers = []
-        for level in ["h1", "h2", "h3"]:
+        for level in ["h1", "h2", "h3", "h4"]:
             if level in doc.metadata:
                 headers.append(doc.metadata[level])
         
@@ -218,16 +223,68 @@ def split_markdown(
         else:
             chunk_text = content
         
-        # Se o chunk é maior que o chunk_size, subdivide com split_fixed
+        # Se o chunk é maior que o limite configurado, subdivide com split_fixed
         # Isso é uma melhoria em relação ao original, que retornava
         # seções grandes inteiras (podendo exceder o limite de tokens)
-        if len(chunk_text) > chunk_size * 1.5:
+        split_threshold = int(chunk_size * max_section_ratio)
+        if max_section_chars is not None:
+            split_threshold = min(split_threshold, int(max_section_chars))
+
+        if len(chunk_text) > split_threshold:
             sub_chunks = split_fixed(chunk_text, chunk_size, chunk_overlap)
             chunks.extend(sub_chunks)
         else:
             chunks.append(chunk_text)
-    
-    return chunks
+
+    # Pós-processamento conservador: evita chunk "somente título".
+    # Mantém a qualidade já validada, removendo ruído de recuperação.
+    def _is_heading_only_chunk(chunk: str) -> bool:
+        text = (chunk or "").strip()
+        if not text:
+            return False
+        if "\n" in text:
+            head, tail = text.split("\n", 1)
+            if tail.strip():
+                return False
+            text = head.strip()
+
+        words = re.findall(r"\b[\wÀ-ÿ]{2,}\b", text)
+        if len(text) > 220 or len(words) > 24:
+            return False
+
+        # Heurísticas para heading/path de legislação/markdown.
+        if " > " in text:
+            return True
+        if re.match(r"^(Art\.\s*\d+[A-Za-z]?|§\s*\d+|[#]{1,3}\s+)", text, flags=re.IGNORECASE):
+            return True
+        if re.search(r"\b(INSTRUÇÃO NORMATIVA|INSTRUC[AÃ]O NORMATIVA)\b", text, flags=re.IGNORECASE):
+            return True
+        return False
+
+    def _merge_heading_only_chunks(items: List[str]) -> List[str]:
+        if not items:
+            return items
+        merged: List[str] = []
+        i = 0
+        while i < len(items):
+            cur = (items[i] or "").strip()
+            if (
+                _is_heading_only_chunk(cur)
+                and i + 1 < len(items)
+                and len(items[i + 1]) <= int(chunk_size * 1.6)
+            ):
+                nxt = items[i + 1].strip()
+                if not nxt.startswith(cur):
+                    merged.append(f"{cur}\n{nxt}")
+                else:
+                    merged.append(nxt)
+                i += 2
+                continue
+            merged.append(items[i])
+            i += 1
+        return merged
+
+    return _merge_heading_only_chunks(chunks)
 
 
 # ============================================================
@@ -400,6 +457,29 @@ def split_by_doc_type(
         (DEFAULT_CHUNK_SIZE, DEFAULT_CHUNK_OVERLAP),
     )
     
+    strategy_norm = (strategy or "").strip().lower()
+    doc_type_norm = (doc_type or "").strip().lower()
+
+    # Regra específica para legislação:
+    # - Prioriza manter artigo + parágrafos juntos
+    # - Ainda impõe teto absoluto para evitar chunks excessivos
+    if strategy_norm == "markdown":
+        max_ratio = 1.5
+        max_chars: Optional[int] = None
+        if doc_type_norm == "legislacao":
+            max_ratio = 2.4
+            max_chars = 1600
+        return (
+            split_markdown(
+                text,
+                chunk_size=size,
+                chunk_overlap=overlap,
+                max_section_ratio=max_ratio,
+                max_section_chars=max_chars,
+            ),
+            "markdown",
+        )
+
     return split_text(
         text,
         strategy=strategy,

@@ -119,7 +119,12 @@ AGENTS: List[Dict[str, Any]] = [
             "probiótico", "lactobacillus", "streptococcus", "acidez",
             "coalhada", "bebida láctea", "bacteriófago", "pH",
         ],
-        "search_config": {},
+        "search_config": {
+            # Fermentados mistura conteúdo técnico + termos específicos de mercado.
+            # Híbrido melhora recuperação semântica e por palavra-chave.
+            "search_type": "hybrid_rrf",
+            "k": 7,
+        },
     },
     {
         "agent_id": 3,

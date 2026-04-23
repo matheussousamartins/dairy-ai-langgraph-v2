@@ -44,3 +44,9 @@ Exemplo (agente base geral transversal):
 ```powershell
 python -c "from app.db.connection import init_pools, close_pools; from app.rag.ingest import ingest_directory; init_pools(); print(ingest_directory(base_dir='docs/agente-0-base-geral/md', table_name='embeddings_agente_0_base_geral', agent_id=0, doc_type='glossario')); close_pools()"
 ```
+
+Exemplo recomendado (agente 2 - fermentados, melhor granularidade):
+
+```powershell
+python -c "from app.db.connection import init_pools, close_pools; from app.rag.ingest import ingest_directory; init_pools(); print(ingest_directory(base_dir='docs/agente-2-fermentados/md', table_name='embeddings_agente_2_fermentados', agent_id=2, doc_type='artigo')); close_pools()"
+```

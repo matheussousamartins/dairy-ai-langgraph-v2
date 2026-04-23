@@ -64,6 +64,7 @@ from app.config import LLM_MODEL, AGENT_TEMPERATURE
 from app.agents.agent_config import get_agent_by_id, get_search_config, AGENTS
 from app.agents.prompts import get_agent_prompt
 from app.rag.search import create_kb_search_tool
+from app.tools.calculations import get_calculation_tools
 
 
 # ============================================================
@@ -156,6 +157,11 @@ def build_agent_graph(agent_id: int) -> Any:
         search_config=search_config,
     )
     tools = [kb_tool]
+    # Tools de cálculo disponíveis para todos os agentes especialistas.
+    # Assim, qualquer domínio que tenha fórmulas na base pode calcular
+    # de forma determinística sem depender de "conta mental" do LLM.
+    if agent_id != 0:
+        tools.extend(get_calculation_tools())
     
     # ---- Passo 3: Criar o modelo LLM com tools ----
     model = ChatOpenAI(model=LLM_MODEL, temperature=AGENT_TEMPERATURE)
@@ -313,4 +319,3 @@ def get_all_agent_graphs() -> Dict[int, Any]:
         if agent_id not in _agent_graphs:
             _agent_graphs[agent_id] = build_agent_graph(agent_id)
     return _agent_graphs
-

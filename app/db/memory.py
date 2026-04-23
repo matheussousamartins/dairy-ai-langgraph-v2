@@ -40,6 +40,7 @@ Salvando no Postgres:
 
 from typing import List, Dict, Any, Optional
 from datetime import datetime
+import json
 import time
 import psycopg
 
@@ -227,6 +228,80 @@ def save_chat_turn(
                 ),
             )
 
+
+def save_routing_log(
+    session_id: str,
+    user_message: str,
+    response_time_ms: int,
+    query_hash: str,
+    selected_agent_ids: List[int],
+    chosen_agent_ids: List[int],
+    execution_plan: List[int],
+    primary_agent_id: int,
+    primary_agent_name: str,
+    routing_confidence: float,
+    routing_bucket: str,
+    routing_reason: str,
+    routing_alternatives: List[int],
+    fallback_used: bool,
+    fallback_attempts: int,
+    fallback_trigger: str,
+    cost_estimate_usd: float,
+) -> None:
+    """Registra dados estruturados de roteamento do orquestrador."""
+    now = datetime.utcnow()
+    with get_hetzner_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO routing_logs (
+                    session_id,
+                    user_message,
+                    query_hash,
+                    selected_agent_ids,
+                    chosen_agent_ids,
+                    execution_plan,
+                    primary_agent_id,
+                    primary_agent_name,
+                    routing_confidence,
+                    routing_bucket,
+                    routing_reason,
+                    routing_alternatives,
+                    fallback_used,
+                    fallback_attempts,
+                    fallback_trigger,
+                    response_time_ms,
+                    cost_estimate_usd,
+                    created_at
+                )
+                VALUES (
+                    %s, %s, %s,
+                    %s::jsonb, %s::jsonb, %s::jsonb,
+                    %s, %s, %s, %s, %s,
+                    %s::jsonb, %s, %s, %s, %s, %s, %s
+                )
+                """,
+                (
+                    session_id,
+                    user_message,
+                    query_hash,
+                    json.dumps(selected_agent_ids),
+                    json.dumps(chosen_agent_ids),
+                    json.dumps(execution_plan),
+                    primary_agent_id,
+                    primary_agent_name,
+                    float(routing_confidence),
+                    routing_bucket,
+                    routing_reason,
+                    json.dumps(routing_alternatives),
+                    bool(fallback_used),
+                    int(fallback_attempts),
+                    fallback_trigger,
+                    int(response_time_ms),
+                    float(cost_estimate_usd),
+                    now,
+                ),
+            )
             cur.execute(
                 """
                 INSERT INTO interaction_logs

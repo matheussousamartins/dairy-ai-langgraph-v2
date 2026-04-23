@@ -1,0 +1,11 @@
+id_teste,pergunta,versao_pergunta,agente_esperado,agente_retorno,roteamento_ok,chunk_1_fonte,chunk_1_trecho_relevante,chunk_2_fonte,chunk_2_trecho_relevante,chunk_3_fonte,chunk_3_trecho_relevante,evidencia_suficiente,resposta_esperada_resumo,resposta_obtida_resumo,resposta_factual_ok,teve_ruido_disclaimer,teve_extrapolacao,tempo_resposta_ms,status_final,causa_raiz,acao_recomendada,observacoes
+T001,,,,,,,,,,,,,,,,,,,,,,
+T002,,,,,,,,,,,,,,,,,,,,,,
+T003,,,,,,,,,,,,,,,,,,,,,,
+T004,,,,,,,,,,,,,,,,,,,,,,
+T005,,,,,,,,,,,,,,,,,,,,,,
+T006,,,,,,,,,,,,,,,,,,,,,,
+T007,,,,,,,,,,,,,,,,,,,,,,
+T008,,,,,,,,,,,,,,,,,,,,,,
+T009,,,,,,,,,,,,,,,,,,,,,,
+T010,,,,,,,,,,,,,,,,,,,,,,

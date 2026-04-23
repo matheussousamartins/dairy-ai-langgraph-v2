@@ -131,7 +131,48 @@ CREATE INDEX IF NOT EXISTS idx_sessions_session_id
 
 
 -- ============================================================
--- 5. VIEWS DE ANALYTICS
+-- 5. LOGS ESTRUTURADOS DE ROTEAMENTO (orquestrador)
+-- ============================================================
+-- Registra telemetria de roteamento para métricas operacionais:
+-- confidence, bucket, fallback, plano executado e custo estimado.
+
+CREATE TABLE IF NOT EXISTS routing_logs (
+    id SERIAL PRIMARY KEY,
+    session_id VARCHAR(255) NOT NULL,
+    user_message TEXT NOT NULL,
+    query_hash VARCHAR(64) NOT NULL,
+    selected_agent_ids JSONB NOT NULL,   -- ids finais escolhidos
+    chosen_agent_ids JSONB NOT NULL,     -- saída direta da classificação
+    execution_plan JSONB NOT NULL,       -- ids efetivamente planejados
+    primary_agent_id INTEGER NOT NULL,
+    primary_agent_name VARCHAR(100) NOT NULL,
+    routing_confidence NUMERIC(5,4) NOT NULL,
+    routing_bucket VARCHAR(10) NOT NULL, -- high|medium|low
+    routing_reason TEXT,
+    routing_alternatives JSONB NOT NULL,
+    fallback_used BOOLEAN NOT NULL DEFAULT FALSE,
+    fallback_attempts INTEGER NOT NULL DEFAULT 0,
+    fallback_trigger VARCHAR(100),
+    response_time_ms INTEGER,
+    cost_estimate_usd NUMERIC(10,6),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_routing_logs_session
+    ON routing_logs (session_id);
+
+CREATE INDEX IF NOT EXISTS idx_routing_logs_created
+    ON routing_logs (created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_routing_logs_bucket
+    ON routing_logs (routing_bucket);
+
+CREATE INDEX IF NOT EXISTS idx_routing_logs_query_hash
+    ON routing_logs (query_hash);
+
+
+-- ============================================================
+-- 6. VIEWS DE ANALYTICS
 -- ============================================================
 
 -- Uso por agente (quantas interações por agente por dia)
@@ -161,3 +202,18 @@ FROM users u
 LEFT JOIN user_sessions us ON u.id = us.user_id
 LEFT JOIN interaction_logs il ON us.session_id = il.session_id
 GROUP BY u.id, u.name, u.email;
+
+-- Qualidade de roteamento por dia e bucket de confiança
+CREATE OR REPLACE VIEW v_routing_quality_daily AS
+SELECT
+    DATE_TRUNC('day', created_at) AS day,
+    routing_bucket,
+    COUNT(*) AS total_requests,
+    ROUND(AVG(routing_confidence)::numeric, 4) AS avg_confidence,
+    ROUND(AVG(response_time_ms)::numeric, 2) AS avg_latency_ms,
+    ROUND(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY response_time_ms)::numeric, 2) AS p95_latency_ms,
+    ROUND(AVG(cost_estimate_usd)::numeric, 6) AS avg_cost_estimate_usd,
+    ROUND((SUM(CASE WHEN fallback_used THEN 1 ELSE 0 END)::numeric / NULLIF(COUNT(*), 0)), 4) AS fallback_rate
+FROM routing_logs
+GROUP BY DATE_TRUNC('day', created_at), routing_bucket
+ORDER BY day DESC, routing_bucket;

@@ -1,0 +1,157 @@
+version: 1
+updated_for_day: day1
+notes:
+  - "Usar como fonte deterministica de roteamento + suporte few-shot para o classificador."
+  - "Os agentes 0 e 3 sao transversais em perguntas do dominio dairy."
+
+transversal:
+  mandatory_for_dairy:
+    - 0
+    - 3
+
+agents:
+  "1":
+    name: "Tecnologia de Queijos"
+    primary_domains:
+      - "processo de fabricacao de queijos"
+      - "coagulacao, corte, tratamento da coalhada, prensagem, salga, maturacao"
+      - "variedades de queijo e impactos de processo"
+    strong_triggers:
+      - "mussarela"
+      - "prato"
+      - "provolone"
+      - "parmesao"
+      - "grana padano"
+      - "parmigiano"
+      - "coalhada de queijo"
+      - "coagulacao"
+      - "filagem"
+      - "maturacao"
+      - "rendimento de queijo"
+    confusion_with:
+      - "6"
+      - "3"
+    disambiguation_hints:
+      - "Se a pergunta for 'como fazer/processar queijo', priorizar o agente 1."
+      - "Se for apenas denominacao legal, manter o agente 3 como co-piloto."
+
+  "2":
+    name: "Fermentados"
+    primary_domains:
+      - "produtos lacteos fermentados"
+      - "comportamento de culturas starter"
+      - "curva de fermentacao e trajetoria de pH/acidez"
+    strong_triggers:
+      - "iogurte"
+      - "kefir"
+      - "leite fermentado"
+      - "cultura lactica"
+      - "inoculacao"
+      - "incubacao"
+      - "pos-acidificacao"
+    confusion_with:
+      - "4"
+      - "6"
+    disambiguation_hints:
+      - "Se o nucleo da pergunta for dinamica de fermentacao, priorizar o agente 2."
+
+  "3":
+    name: "Regulatorios por Pais"
+    primary_domains:
+      - "normas, leis e requisitos legais"
+      - "IN, RDC, RTIQ, RIISPOA"
+      - "rotulagem e obrigacoes de conformidade"
+    strong_triggers:
+      - "in "
+      - "rdc"
+      - "riispoa"
+      - "art."
+      - "regulamento tecnico"
+      - "conformidade legal"
+      - "rotulagem obrigatoria"
+      - "d.o.p."
+    confusion_with:
+      - "1"
+      - "4"
+    disambiguation_hints:
+      - "Se o usuario pedir limite legal/requisito obrigatorio/artigo, priorizar o agente 3."
+
+  "4":
+    name: "Qualidade do Leite"
+    primary_domains:
+      - "analise de qualidade do leite"
+      - "metodos fisico-quimicos e qualitativos"
+      - "deteccao de fraude/adulteracao em leite"
+    strong_triggers:
+      - "alizarol"
+      - "dornic"
+      - "acidez titulavel"
+      - "crioscopia"
+      - "densidade"
+      - "ccs"
+      - "cbt"
+      - "peroxidase"
+      - "formol"
+      - "neutralizante"
+      - "amido no leite"
+    confusion_with:
+      - "2"
+      - "3"
+    disambiguation_hints:
+      - "Se a pergunta envolver metodo de teste e interpretacao, priorizar o agente 4."
+
+  "5":
+    name: "Diagnostico de Defeitos"
+    primary_domains:
+      - "diagnostico de defeitos"
+      - "causa raiz e acoes corretivas"
+      - "troubleshooting de defeitos sensoriais/de processo"
+    strong_triggers:
+      - "defeito"
+      - "estufamento"
+      - "amargo"
+      - "rancoso"
+      - "trinca"
+      - "olhadura anormal"
+      - "causa raiz"
+      - "acao corretiva"
+    confusion_with:
+      - "1"
+      - "4"
+    disambiguation_hints:
+      - "Se o fluxo for sintoma -> causa provavel -> acao corretiva, priorizar o agente 5."
+
+  "6":
+    name: "Formulacao e Desenvolvimento"
+    primary_domains:
+      - "formulacao e desenvolvimento de produto"
+      - "substituicao de ingredientes e balanceamento de composicao"
+      - "desenho de shelf-life e perfil alvo"
+    strong_triggers:
+      - "formulacao"
+      - "receita tecnica"
+      - "estabilizante"
+      - "espessante"
+      - "balanco de massa"
+      - "substituicao de ingrediente"
+      - "vida util"
+      - "shelf life"
+    confusion_with:
+      - "1"
+      - "2"
+    disambiguation_hints:
+      - "Se o objetivo principal for otimizar composicao, priorizar o agente 6."
+
+priority_examples:
+  - query: "Quais variedades de queijo italiano com denominacao Grana e D.O.P.?"
+    expected_primary: 1
+    secondary: [3, 0]
+    rationale: "Conhecimento de produto/dominio primeiro; contexto legal em seguida."
+  - query: "Qual o limite legal de adicao de leite na ricota?"
+    expected_primary: 3
+    secondary: [0]
+    rationale: "Requisito legal vindo de fonte normativa."
+  - query: "No alizarol com grumos, como interpretar?"
+    expected_primary: 4
+    secondary: [0, 3]
+    rationale: "Interpretacao de metodo no dominio de analise de qualidade."

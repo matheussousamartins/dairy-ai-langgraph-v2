@@ -188,6 +188,6 @@ result = ingest_directory( \
     base_dir='$(DIR)', \
     table_name=cfg['table_name'], \
     agent_id=$(AGENT), \
-    doc_type='$(or $(TYPE),manual)' \
+    doc_type=('$(TYPE)' if '$(TYPE)' else ('artigo' if int($(AGENT)) == 2 else 'manual')) \
 ); \
 print(result)"
