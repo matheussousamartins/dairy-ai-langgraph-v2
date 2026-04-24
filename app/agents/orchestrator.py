@@ -1,12 +1,12 @@
 ﻿"""
-agents/orchestrator.py â€” Orquestrador multi-agente com execuÃ§Ã£o paralela
+agents/orchestrator.py â€" Orquestrador multi-agente com execuÃ§Ã£o paralela
 
 Fluxo do grafo:
   classify â†’ route â†’ execute (paralelo) â†’ consolidate â†’ END
                 â†˜ respond_direct â†’ consolidate â†’ END
 
 Agentes 0 (Base Geral) e 3 (Regulatórios) são SEMPRE incluídos
-para qualquer pergunta sobre laticÃ­nios â€” o classificador Ã© instruÃ­do
+para qualquer pergunta sobre laticÃ­nios â€" o classificador Ã© instruÃ­do
 a retorná-los obrigatoriamente.
 
 Execução paralela:
@@ -2044,7 +2044,7 @@ async def classify(state: OrchestratorState) -> OrchestratorState:
     """Identifica quais agentes devem ser consultados.
 
     Agentes 0 e 3 são SEMPRE obrigatórios para qualquer pergunta
-    de laticÃ­nios â€” o prompt instrui o LLM explicitamente.
+    de laticÃ­nios â€" o prompt instrui o LLM explicitamente.
     """
     messages = state.get("messages", [])
     user_text = _get_last_user_text(messages)
@@ -2082,42 +2082,43 @@ async def classify(state: OrchestratorState) -> OrchestratorState:
 
 Com base na pergunta do usuário, identifique quais agentes devem ser consultados.
 
-REGRA OBRIGATÃ“RIA:
+REGRA OBRIGATÓRIA:
 - Para QUALQUER pergunta relacionada a laticínios (produtos, processos,
   ingredientes, fabricantes, distribuidores, equipamentos, normas, qualidade,
   defeitos, formulação, legislação), SEMPRE inclua os agentes 0 e 3 na lista.
 - Agente 0 (Base Geral Dairy): glossário, produtos, fabricantes, ingredientes,
-  distribuidores, equipamentos â€” base de conhecimento transversal.
+  distribuidores, equipamentos — base de conhecimento transversal.
 - Agente 3 (Regulatórios por País): normas, legislação, requisitos legais.
 
 ESPECIALISTAS (adicione apenas se a pergunta for claramente desse domínio):
 {_SPECIALISTS_DESC}
- FORMATO DA RESPOSTA:
- - SaudaÃ§Ã£o / off-topic (sem relaÃ§Ã£o com laticÃ­nios) â†’ []
- - Pergunta de laticÃ­nios sem especialidade clara â†’ [0, 3]
- - Pergunta com especialidade clara â†’ [0, 3, X]
- - Pergunta com mÃºltiplas especialidades â†’ [0, 3, X, Y] (mÃ¡x 5 IDs)
- - Ordene por relevância: o agente mais relevante primeiro.
- 
-ALÃ‰M DOS IDs, informe:
-- confidence: nÃºmero entre 0.0 e 1.0
+FORMATO DA RESPOSTA:
+- Saudação / off-topic (sem relação com laticínios) → []
+- Pergunta de laticínios sem especialidade clara → [0, 3]
+- Pergunta com especialidade clara → [0, 3, X]
+- Pergunta com múltiplas especialidades → [0, 3, X, Y] (máx 5 IDs)
+- Ordene por relevância: o agente mais relevante primeiro.
+
+ALÉM DOS IDs, informe:
+- confidence: número entre 0.0 e 1.0
 - reason: justificativa curta
 - alternatives: IDs alternativos relevantes (sem repetir os principais)
 
-REGRAS DE DESEMPATE (OBRIGATÃ“RIAS):
-- Se a pergunta for de glossÃ¡rio, padronizaÃ§Ã£o de termos, "qual termo usar" ou "significado esperado",
-  priorize [0,3] e NÃƒO escolha especialista como primÃ¡rio.
-- Se a pergunta envolver rotulagem/denominaÃ§Ã£o/embalagem de produto lÃ¡cteo,
-  priorize [0,3] (regulatÃ³rio), mesmo que cite nome de queijo.
+REGRAS DE DESEMPATE (OBRIGATÓRIAS):
+- Se a pergunta for de glossário, padronização de termos, "qual termo usar" ou "significado esperado",
+  priorize [0,3] e NÃO escolha especialista como primário.
+- Se a pergunta envolver rotulagem/denominação/embalagem de produto lácteo,
+  priorize [0,3] (regulatório), mesmo que cite nome de queijo.
 - Se a pergunta mencionar "norma", "regulamento", "IN", "RDC", "decreto" ou "artigo",
-  priorize [0,3] e evite priorizar formulaÃ§Ã£o (6) como agente principal.
-- Se a pergunta for de mÃ©todo analÃ­tico/laboratorial (Dornic, titulacao, HCl, NaOH, IN 68, centrifugaÃ§Ã£o etc.),
-  inclua 4 e priorize 4 como especialista.
-- Se a pergunta citar fermentaÃ§Ã£o em queijo/coalhada de processo (corte de coalhada, pH de corte),
-  priorize 1 (queijos) e nÃ£o 2.
-- Se a pergunta for de padronizaÃ§Ã£o de termo/glossÃ¡rio ("qual termo usar", "significado esperado"),
-  priorize [0,3] e evite especialistas como primÃ¡rios.
-- Evite super-especializar perguntas institucionais ou terminolÃ³gicas.
+  priorize [0,3] e evite priorizar formulação (6) como agente principal.
+- Se a pergunta for de método analítico/laboratorial (Dornic, titulação, HCl, NaOH, IN 68,
+  absorbância, comprimento de onda, centrifugação, m/m, m/v etc.),
+  inclua 4 e priorize 4 como especialista — IN 68 é documento de métodos do Agente 4, não regulatório.
+- Se a pergunta citar fermentação em queijo/coalhada de processo (corte de coalhada, pH de corte),
+  priorize 1 (queijos) e não 2.
+- Se a pergunta for de padronização de termo/glossário ("qual termo usar", "significado esperado"),
+  priorize [0,3] e evite especialistas como primários.
+- Evite super-especializar perguntas institucionais ou terminológicas.
 
  {_CLASSIFIER_FEW_SHOTS}
  """
@@ -2181,7 +2182,7 @@ def route_after_fallback(state: OrchestratorState) -> str:
 
 
 # ============================================================
-# NÃ³ EXECUTE â€” execuÃ§Ã£o paralela
+# NÃ³ EXECUTE â€" execuÃ§Ã£o paralela
 # ============================================================
 
 async def execute(state: OrchestratorState) -> OrchestratorState:
@@ -2267,7 +2268,7 @@ async def execute(state: OrchestratorState) -> OrchestratorState:
 
 
 # ============================================================
-# NÃ³ FALLBACK_RECLASSIFY â€” segunda passada inteligente
+# NÃ³ FALLBACK_RECLASSIFY â€" segunda passada inteligente
 # ============================================================
 
 async def fallback_reclassify(state: OrchestratorState) -> OrchestratorState:
@@ -2321,7 +2322,7 @@ async def fallback_reclassify(state: OrchestratorState) -> OrchestratorState:
 
 
 # ============================================================
-# NÃ³ RESPOND_DIRECT â€” saudaÃ§Ãµes e off-topic
+# NÃ³ RESPOND_DIRECT â€" saudaÃ§Ãµes e off-topic
 # ============================================================
 
 async def respond_direct(state: OrchestratorState) -> OrchestratorState:
@@ -2351,7 +2352,7 @@ async def respond_direct(state: OrchestratorState) -> OrchestratorState:
 
 
 # ============================================================
-# NÃ³ CONSOLIDATE â€” fusÃ£o das respostas
+# NÃ³ CONSOLIDATE â€" fusÃ£o das respostas
 # ============================================================
 
 async def consolidate(state: OrchestratorState) -> OrchestratorState:

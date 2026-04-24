@@ -67,14 +67,14 @@ AGENTS: List[Dict[str, Any]] = [
         "name": "Base Geral Dairy",
         "table_name": "embeddings_agente_0_base_geral",
         "description": (
-            "Base transversal de conhecimento geral da empresa (glossÃ¡rio, "
-            "verdades absolutas, definiÃ§Ãµes canÃ´nicas e convenÃ§Ãµes de linguagem). "
-            "Deve apoiar todas as respostas para manter coerÃªncia terminolÃ³gica "
+            "Base transversal de conhecimento geral da empresa (glossário, "
+            "verdades absolutas, definições canônicas e convenções de linguagem). "
+            "Deve apoiar todas as respostas para manter coerência terminológica "
             "e diretrizes institucionais."
         ),
         "keywords": [
-            "glossÃ¡rio", "termo", "definiÃ§Ã£o", "conceito", "verdades absolutas",
-            "diretriz", "padrÃ£o", "institucional", "base geral",
+            "glossário", "termo", "definição", "conceito", "verdades absolutas",
+            "diretriz", "padrão", "institucional", "base geral",
         ],
         "search_config": {
             "search_type": "hybrid_rrf",
@@ -134,8 +134,12 @@ AGENTS: List[Dict[str, Any]] = [
             "Especialista em legislação e regulamentação de laticínios. "
             "Cobre normas brasileiras (MAPA, ANVISA), internacionais "
             "(FDA, EU, Codex Alimentarius, Mercosul), instruções normativas "
-            "(IN 76, IN 77, IN 30, IN 68), RDCs, RIISPOA, padrões "
-            "microbiológicos, rotulagem, RTIQ de produtos lácteos."
+            "(IN 76, IN 77, IN 30, IN 46, IN 22), RDCs (RDC 331, RDC 259), "
+            "RIISPOA (Decreto 9.013/2017), padrões de identidade e qualidade "
+            "(INs 65, 66, 71, 72, 73, 74 — características sensoriais, "
+            "substâncias estranhas, formas de apresentação), "
+            "rotulagem, RTIQ de produtos lácteos. "
+            "NÃO cobre métodos analíticos — esse é domínio do Agente 4."
         ),
         "keywords": [
             "legislação", "norma", "IN", "RDC", "RIISPOA", "MAPA",
@@ -157,10 +161,13 @@ AGENTS: List[Dict[str, Any]] = [
         "table_name": "embeddings_agente_4_qualidade_leite",
         "description": (
             "Especialista em qualidade da matéria-prima leite. "
-            "Cobre análises físico-químicas (acidez, crioscopia, densidade, "
-            "gordura, proteína, lactose), contagem de células somáticas (CCS), "
+            "Cobre análises físico-químicas (acidez Dornic, crioscopia, densidade, "
+            "gordura, proteína, lactose, ESD, EST), contagem de células somáticas (CCS), "
             "contagem bacteriana total (CBT), detecção de fraudes e adulterações "
             "(aguagem, neutralizantes, conservantes, reconstituintes), "
+            "métodos analíticos oficiais IN 68 (qualitativos, quantitativos, "
+            "espectrofotometria, absorbância, comprimento de onda, m/m, m/v, "
+            "azul de metileno, ácido sórbico, recomendações de segurança laboratorial), "
             "fatores que afetam qualidade (raça, alimentação, estação, manejo), "
             "pagamento por qualidade."
         ),
