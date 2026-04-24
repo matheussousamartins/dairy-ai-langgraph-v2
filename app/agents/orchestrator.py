@@ -78,7 +78,7 @@ AGENT_TIMEOUT = int(os.getenv("AGENT_TIMEOUT", "12"))
 _SPECIALISTS_DESC = "".join(
     f"  {agent['agent_id']} = {agent['name']}\n"
     for agent in AGENTS
-    if agent["agent_id"] not in (0, 3)
+    if agent["agent_id"] not in (0, 3, 5, 6)
 )
 
 _CLASSIFICATION_CACHE: "OrderedDict[str, List[int]]" = OrderedDict()
@@ -193,6 +193,18 @@ _FERMENTED_STRONG_TERMS = {
     "proteinas do soro", "proteínas do soro", "soroproteina", "soroprotéina",
     "beta-lactoglobulina", "beta lactoglobulina",
     "skyr",
+    # Termos exclusivos de fermentados extraídos dos docs (fix confusão 2→3)
+    "exopolissacarideo", "exopolissacarídeo", "eps",
+    "incubacao de iogurte", "incubação de iogurte",
+    "bebida lactea fermentada", "bebida láctea fermentada",
+    "bebida lactea", "bebida láctea",
+    "fermentado base vegetal", "fermentado em base vegetal",
+    "bifidobacterium", "lactobacillus bulgaricus", "l. bulgaricus",
+    "acidifix", "cultura termofila", "cultura termófila",
+    "hotfil", "hot fill", "dressing de creme",
+    "isomero latico", "isômero lático",
+    "viscosidade do gel", "consistencia do gel", "consistência do gel",
+    "coalhada de iogurte",
 }
 
 _CHEESE_STRONG_TERMS = {
@@ -203,6 +215,20 @@ _CHEESE_STRONG_TERMS = {
     "soro", "coagulação", "coagulacao", "coalho",
     # Proteólise é processo central de maturação de queijo (fix confusão 1→4)
     "proteolise", "proteólise", "proteolisis",
+    # Termos exclusivos de tecnologia de queijos extraídos dos docs (fix 1→4/1→3)
+    "browning", "maillard no queijo", "derretimento do queijo",
+    "rendimento de fabricacao", "rendimento de fabricação",
+    "recuperacao de gordura", "recuperação de gordura",
+    "plasmina", "lipolise no queijo", "lipólise no queijo",
+    "desmineralizacao", "desmineralização",
+    "sinerese da coalhada", "sinérese da coalhada",
+    "olhadura", "trinca no queijo",
+    "cristal de lactato", "cristais de lactato",
+    "grana padano", "parmigiano", "parmesao", "parmesão",
+    "cultivo adjunto", "cultivos adjuntos",
+    "indice c/p", "índice c/p",
+    "sal na umidade", "porcentagem de sal",
+    "rendimento queijo",
 }
 
 # Regras determinísticas de alta precisão para intents críticas.
@@ -517,12 +543,12 @@ _FALLBACK_EXTRA_SPECIALISTS = {
 }
 # Mapa de vizinhanca entre especialistas (extraido da taxonomia day1).
 _NEAREST_SPECIALIST_MAP: Dict[int, List[int]] = {
-    1: [6, 3, 5],
-    2: [4, 6, 5],
-    3: [1, 4, 6],
-    4: [2, 3, 5],
-    5: [1, 4, 6],
-    6: [1, 2, 4],
+    1: [],
+    2: [1],
+    3: [1, 4],
+    4: [2],
+    5: [1, 4],
+    6: [1, 2],
 }
 
 
@@ -554,7 +580,8 @@ def _load_taxonomy_nearest_map() -> Dict[int, List[int]]:
                     nid = int(raw_id)
                 except (TypeError, ValueError):
                     continue
-                if nid not in _ROUTING_BASELINE_IDS and 0 <= nid <= 6 and nid not in near:
+                _no_kb = {5, 6}
+                if nid not in _ROUTING_BASELINE_IDS and nid not in _no_kb and 0 <= nid <= 6 and nid not in near:
                     near.append(nid)
             if near:
                 loaded[aid] = near
@@ -1178,12 +1205,22 @@ def _infer_domain_primary_from_text(text: str, candidate_ids: List[int]) -> Opti
     if not ids:
         return None
 
-    if _is_normative_regulatory_signal(text_norm) and 3 in ids:
-        return 3
-
-    # Perguntas de glossário/padronização da linguagem corporativa devem manter 0.
+    # Glossário/padronização antes do sinal normativo: algumas queries de glossário
+    # contêm "norma" ou "regulamento" e não devem ser capturadas pelo Agent 3.
     if _is_glossary_or_normalization_signal(text_norm) and 0 in ids:
         return 0
+
+    if _is_normative_regulatory_signal(text_norm) and 3 in ids:
+        # Regra especialista-em-contexto: se a query cita uma norma MAS o tema central
+        # é de um domínio especialista (fermentados, queijos, qualidade do leite),
+        # o especialista é o primário — Agent 3 permanece no plano como co-piloto.
+        if _is_strong_fermented_signal(text_norm) and 2 in ids:
+            return 2
+        if _is_strong_cheese_signal(text_norm) and 1 in ids:
+            return 1
+        if _is_strong_quality_signal(text_norm) and 4 in ids:
+            return 4
+        return 3
 
     # Rotulagem/denominação/embalagem em produto lácteo é tema regulatório.
     if _is_labeling_regulatory_signal(text_norm) and 3 in ids:
@@ -1198,6 +1235,8 @@ def _infer_domain_primary_from_text(text: str, candidate_ids: List[int]) -> Opti
         _cheese_quality_impact = (
             "amargor", "proteolise", "proteólise", "rendimento",
             "maturacao", "maturação", "coagulacao", "coagulação",
+            "plasmina", "lipolise", "lipólise", "filagem", "prensagem",
+            "rendimento de queijo", "recuperacao de gordura",
         )
         if _is_strong_cheese_signal(text_norm) and 1 in ids:
             if any(t in text_norm for t in _cheese_quality_impact):
@@ -1248,16 +1287,31 @@ def _rule_based_route(user_text: str) -> Optional[List[int]]:
     ):
         return [0, 3, 4]
 
-    # Contexto normativo explícito deve permanecer no regulatório.
+    # Contexto normativo explícito com domínio especialista identificado:
+    # inclui o especialista no plano — Agent 3 co-piloto, especialista é primário.
     if _is_normative_regulatory_signal(text):
+        if _is_strong_fermented_signal(text):
+            return [0, 3, 2]
+        if _is_strong_cheese_signal(text):
+            return [0, 3, 1]
+        if _is_strong_quality_signal(text):
+            return [0, 3, 4]
         return [0, 3]
 
     # Precedencia forte de domínio:
     # 1) Regulatório domina quando houver sinal normativo claro.
     # 2) Métodos/qualidade domina para perguntas analíticas de laboratório.
     if _is_labeling_regulatory_signal(text):
+        if _is_strong_fermented_signal(text):
+            return [0, 3, 2]
+        if _is_strong_cheese_signal(text):
+            return [0, 3, 1]
         return [0, 3]
     if _is_strong_regulatory_signal(text):
+        if _is_strong_fermented_signal(text):
+            return [0, 3, 2]
+        if _is_strong_cheese_signal(text):
+            return [0, 3, 1]
         return [0, 3]
     if _is_strong_quality_signal(text):
         # CCS/mastite + impacto em queijo → incluir Agente 1 (fix confusão 1→4)
@@ -1595,7 +1649,8 @@ def _collect_fallback_candidates(state: OrchestratorState) -> List[int]:
             candidates.append(aid)
 
     already_planned = set(plan)
-    return [aid for aid in candidates if aid not in already_planned]
+    raw = [aid for aid in candidates if aid not in already_planned]
+    return _sanitize_agent_ids(raw)
 
 
 def _has_weak_or_conflicting_evidence(responses: List[Dict[str, Any]]) -> bool:
@@ -1651,8 +1706,8 @@ def _should_trigger_fallback(state: OrchestratorState) -> Tuple[bool, str]:
     if bucket == "low":
         return True, "low_confidence_bucket"
 
-    if bucket == "medium" and _has_specialist_factual_evidence(responses):
-        return False, "specialist_evidence_sufficient"
+    if bucket == "medium":
+        return False, "medium_conservative"
 
     if _has_weak_or_conflicting_evidence(responses):
         return True, "weak_or_conflicting_evidence"

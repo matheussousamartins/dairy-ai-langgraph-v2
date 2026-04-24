@@ -28,9 +28,7 @@ agents:
       - "filagem"
       - "maturacao"
       - "rendimento de queijo"
-    confusion_with:
-      - "6"
-      - "3"
+    confusion_with: []
     disambiguation_hints:
       - "Se a pergunta for 'como fazer/processar queijo', priorizar o agente 1."
       - "Se for apenas denominacao legal, manter o agente 3 como co-piloto."
@@ -50,8 +48,7 @@ agents:
       - "incubacao"
       - "pos-acidificacao"
     confusion_with:
-      - "4"
-      - "6"
+      - "1"
     disambiguation_hints:
       - "Se o nucleo da pergunta for dinamica de fermentacao, priorizar o agente 2."
 
