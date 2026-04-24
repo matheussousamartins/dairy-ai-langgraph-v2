@@ -41,10 +41,37 @@ from app.config import (
     DIRECT_TEMPERATURE,
     ORCHESTRATOR_FASTPATH,
     CLASSIFICATION_CACHE_SIZE,
+    ENABLE_GENERAL_INDEX_FALLBACK,
+    GENERAL_INDEX_FALLBACK_SEARCH_TYPE,
+    GENERAL_INDEX_FALLBACK_PER_TABLE_K,
+    GENERAL_INDEX_FALLBACK_FINAL_K,
+    GENERAL_INDEX_FALLBACK_MIN_RESULTS,
+    GENERAL_INDEX_FALLBACK_MAX_TABLES,
+    GENERAL_INDEX_FALLBACK_ONLY_ON_WEAK,
+    GENERAL_INDEX_FALLBACK_REQUIRE_DAIRY_SIGNAL,
+    ENABLE_WEB_FALLBACK,
+    WEB_FALLBACK_PROVIDER,
+    WEB_FALLBACK_TIMEOUT_SEC,
+    WEB_FALLBACK_MAX_RESULTS,
+    WEB_FALLBACK_MAX_SOURCES,
+    WEB_FALLBACK_ONLY_ON_WEAK,
+    WEB_FALLBACK_REQUIRE_DAIRY_SIGNAL,
+    WEB_FALLBACK_REQUIRE_GENERAL_FALLBACK_FIRST,
+    WEB_FALLBACK_FETCH_FULLTEXT,
+    WEB_FALLBACK_MAX_PAGE_CHARS,
+    WEB_FALLBACK_MAX_SNIPPET_CHARS,
+    WEB_FALLBACK_ALLOWED_DOMAINS,
+    MATCH_THRESHOLD,
 )
 from app.agents.prompts import get_orchestrator_prompt
 from app.agents.agent_config import AGENTS, get_agent_by_id
 from app.agents.base_agent import get_agent_graph
+from app.rag.search import search_general_knowledge_base
+from app.tools.web_fallback import (
+    search_web_duckduckgo,
+    enrich_results_with_page_content,
+    build_web_fallback_evidence,
+)
 
 # Tempo máximo de espera por agente (segundos)
 AGENT_TIMEOUT = int(os.getenv("AGENT_TIMEOUT", "12"))
@@ -69,11 +96,412 @@ _QUALITY_LAB_TERMS = {
     "laboratorio", "analise", "analitico", "amostra", "coleta",
     "controle de qualidade", "qualidade", "bpl", "boas praticas",
     "incendio", "emergencia", "evacuacao", "extintor", "epi", "brigada",
+    "reagente", "reagentes", "capela", "residuo", "residuos",
+    "sistema fechado", "titulacao", "titulação", "pipeta", "balanca", "balança",
+    # Segurança laboratorial IN 68 (fix confusão 4→0)
+    # "Evite armazenar INFLAMÁVEIS próximos de chama" e "Não inalar vapores"
+    # são seções das Recomendações Gerais da IN 68 (Agente 4)
+    "inflamavel", "inflamaveis", "inflamável", "inflamáveis",
+    "inalar", "nao inalar", "não inalar",
+    # Notação de concentração usada em IN 68 (m/m, m/v)
+    "m/m", "m/v", "massa em massa", "massa em volume",
+    # Indicadores/soluções de referência da IN 68
+    "azul de metileno",
+}
+
+_REGULATORY_STRONG_TERMS = {
+    "rdc", "riispoa", "sif", "dipoa", "anvisa", "mapa",
+    "instrução normativa", "instrucao normativa", "decreto",
+    "resolucao", "resolução", "rotulagem", "rotulo", "rótulo",
+    "art.", "artigo", "prazo de adequacao", "prazo de adequação",
+    "comercio interestadual", "comércio interestadual",
+    "informacao nutricional complementar", "informação nutricional complementar",
+    "alegacao nutricional", "alegação nutricional", "light", "zero",
+    "aditivo alimentar", "coadjuvante de tecnologia",
+    "ingredientes obrigatorios", "ingredientes obrigatórios",
+    "rotular", "rotulagem", "denominacao de venda", "denominação de venda",
+    "norma", "normas", "regulamento", "requisito legal", "requisitos legais",
+    # Linguagem operacional RIISPOA/MAPA (fix confusão 3→1)
+    "produto suspeito", "reinspeção", "reinspcao", "aproveitamento condicional",
+    "condenacao", "condenação", "estabelecimento registrado",
+    "registro no sif", "registro no mapa", "sou obrigado a ter",
+    # Alegações nutricionais de ausência/redução (RDC 54) (fix confusão 3→1)
+    "nao contem gordura", "não contém gordura", "isento de gordura",
+    "sem adicao de gordura", "nao contem acucar", "não contém açúcar",
+    "valor energetico reduzido", "teor reduzido",
+    # Padrões de composição mínima de produto (fix confusão 3→1)
+    "teor minimo", "teor máximo", "teor maximo", "composicao minima",
+    "minimos para sobremesa", "minimos para bebida", "minimos para iogurte",
+    # Linguagem de padrão de identidade — INs 65/66/71/72/73/74 (fix confusão 3→1)
+    # "Quais características sensoriais o minas padrão deve ter?" → regulatório
+    "padrao de identidade", "padrão de identidade",
+    "identidade e qualidade", "regulamento tecnico de identidade",
+    "formas de apresentacao", "formas de apresentação",
+    "substancias estranhas", "substâncias estranhas",
+    "particulas estranhas", "partículas estranhas",
+    "caracteristicas sensoriais", "características sensoriais",
+    "sabor caracteristico", "sabor característico",
+    "aroma caracteristico", "aroma característico",
+    "impurezas de qualquer natureza",
+}
+
+_QUALITY_STRONG_TERMS = {
+    "in 68", "dornic", "crioscopia", "acidez titulavel", "acidez titulável",
+    "formaldeido", "formaldeído", "cbt", "ccs", "alizarol", "titulacao",
+    "titulação", "hcl", "naoh", "espectrofotometro", "espectrofotômetro",
+    "amostra", "triplicata", "pericia", "perícia",
+    "transmitancia", "transmitância", "centrifugacao", "centrifugação",
+    "acido sialico", "ácido siálico", "kmno4", "kh2po4", "na2hpo4",
+    "tampao", "tampão", "espectrofotometrico", "espectrofotométrico",
+    "gelatina",
+    # Métodos analíticos IN 68 (fix confusão 4→3)
+    "metodo a", "metodo b", "metodo c", "metodo d",
+    "leite fluido", "leite beneficiado", "beneficiamento do leite",
+    "mastite", "celulas somaticas", "células somáticas",
+    # Termos espectrofotométricos / IN 68 (fix confusão 4→3)
+    # "absorbância" e "comprimento de onda" são de métodos analíticos do leite, não regulatórios
+    "absorbancia", "absorbância", "comprimento de onda",
+    # Ácido sórbico: conservante regulado por IN 68 em métodos qualitativos/quantitativos
+    "acido sorbico", "ácido sórbico",
+    # Leite cru: contexto de caracterização físico-química (Qualidade do Leite)
+    "leite cru",
+}
+
+_GENERAL_KNOWLEDGE_TERMS = {
+    "empresa", "fabricante", "distribui", "distribuidor",
+    "referencia", "referência", "documento", "conceito", "definicao",
+    "definição", "glossario", "glossário",
+    "padronizado", "padronizar", "padronizacao", "padronização",
+    "termo correto", "significado esperado", "em ingles", "em inglês",
+    "starter", "rennet", "endogenous", "phage", "fagos",
+    "coagusens", "coagutrack", "quimosina",
+    # Instrumentos e índices de coagulação (fix confusão 0→1)
+    "coagulometro", "coagulômetro", "indice c/p", "índice c/p",
+    "fermento repicado", "enzima coagulante", "forca de gel", "força de gel",
+    "indice de coagulação", "índice de coagulação",
+}
+
+_FERMENTED_STRONG_TERMS = {
+    "iogurte", "kefir", "leite fermentado", "fermentacao", "fermentação",
+    "acido latico", "ácido lático", "sinérese", "sinerese",
+    "pos-acidificacao", "pós-acidificação", "cultura lactica", "cultura láctica",
+    "starter", "nslab",
+    # Descritores sensoriais de fermentados (fix confusão 2→1)
+    "indulgente", "aveludado", "aveludada",
+    "ph de estabilizacao", "ph de estabilização",
+    # Proteínas do soro em contexto de gel/fermentados (fix confusão 2→1)
+    "proteinas do soro", "proteínas do soro", "soroproteina", "soroprotéina",
+    "beta-lactoglobulina", "beta lactoglobulina",
+    "skyr",
+}
+
+_CHEESE_STRONG_TERMS = {
+    "queijo", "mussarela", "muçarela", "mozarela", "mucarela",
+    "provolone", "ricota", "coalho", "filagem", "prensagem",
+    "maturacao", "maturação", "cheddar", "cottage", "minas meia cura",
+    "coalhada", "corte da coalhada", "agua de lavagem", "água de lavagem",
+    "soro", "coagulação", "coagulacao", "coalho",
+    # Proteólise é processo central de maturação de queijo (fix confusão 1→4)
+    "proteolise", "proteólise", "proteolisis",
+}
+
+# Regras determinísticas de alta precisão para intents críticas.
+# Texto já chega normalizado (sem acento e em minúsculas).
+_INTENT_PATTERNS_BY_AGENT: Dict[int, tuple[str, ...]] = {
+    # Agente 1: Tecnologia de Queijos
+    1: (
+        r"\bpizza\b",
+        r"\bmu?ss?arela\b|\bmozarela\b|\bmucarela\b",
+        r"\bderretimento\b",
+        r"\bbrowning\b",
+        r"\bfilagem\b",
+        r"\bprensagem\b",
+        r"\bprovolone\b",
+        # Defeitos técnicos de queijo (fix confusão 1→5)
+        # Esses defeitos estão documentados nos artigos Ha-La Biotec do Agente 1
+        r"\bestufamento\b",
+        r"\bclc\b",
+        r"\bbutiric[ao]\b",
+        r"\bamargor\b",
+        r"\bolfatura\b|\bolhadura\b|\btrinca\b",
+    ),
+    # Agente 2: Fermentados
+    2: (
+        r"\biogurte\b",
+        r"\bfermentacao\b",
+        r"\bsinerese\b|\bsinerese\b",
+        r"\bacido\s+latico\b",
+        r"\bkefir\b",
+        r"\bcoalhada\b",
+    ),
+    # Agente 3: Regulatórios
+    3: (
+        r"\brotulag",
+        r"\brdc\b",
+        r"\bin\s*\d{1,4}\b",
+        r"\briispoa\b",
+        r"\bart\.?\s*\d+\b",
+        r"\binstrucao\s+normativa\b",
+        r"\bmedida\s+provisoria\b",
+    ),
+    # Agente 4: Qualidade do Leite
+    4: (
+        r"\bformaldeido\b",
+        r"\bdornic\b",
+        r"\bccs\b",
+        r"\bcbt\b",
+        r"\bacidez\s+titulavel\b",
+        r"\bcrioscopia\b",
+        r"\balizarol\b",
+    ),
+}
+
+_CLASSIFIER_FEW_SHOTS = """
+FEW-SHOTS (padrao esperado):
+- Pergunta: "Qual teste qualitativo detecta formaldeído no leite e qual indicação de positivo?"
+  agent_ids: [0,3,4]
+  confidence: 0.96
+  reason: "Teste qualitativo e fraude/adulterante em leite -> Qualidade do Leite."
+  alternatives: [5]
+
+- Pergunta: "Quais açúcares são responsáveis pelo escurecimento do queijo na pizza?"
+  agent_ids: [0,3,1]
+  confidence: 0.94
+  reason: "Tema tecnológico de queijo/pizza (browning/derretimento) -> Tecnologia de Queijos."
+  alternatives: [5]
+
+- Pergunta: "Quanto da lactose pode ser transformada em ácido lático pelas bactérias do iogurte?"
+  agent_ids: [0,3,2]
+  confidence: 0.95
+  reason: "Fermentação em iogurte e metabolismo de lactose -> Fermentados."
+  alternatives: [4]
+
+- Pergunta: "Posso rotular como light se reduzir só 10% de sódio?"
+  agent_ids: [0,3]
+  confidence: 0.97
+  reason: "Critério de rotulagem regulatória -> Regulatórios."
+  alternatives: [6]
+
+- Pergunta: "Explique diferença entre ESD e EST no leite e impacto tecnológico."
+  agent_ids: [0,3,4]
+  confidence: 0.93
+  reason: "Composição físico-química do leite e impacto tecnológico -> Qualidade do Leite."
+  alternatives: [1]
+
+- Pergunta: "Se eu usar aroma de fumaça, a rotulagem vira defumado ou sabor defumado?"
+  agent_ids: [0,3]
+  confidence: 0.97
+  reason: "Denominação de venda/rotulagem regulatória."
+  alternatives: [1]
+
+- Pergunta: "Como calcular acidez titulável em leite fluido pelo método Dornic?"
+  agent_ids: [0,3,4]
+  confidence: 0.96
+  reason: "Método analítico de qualidade do leite (Dornic)."
+  alternatives: []
+
+- Pergunta: "Qual é a capital da França?"
+  agent_ids: []
+  confidence: 0.99
+  reason: "Fora do escopo de laticínios."
+  alternatives: []
+
+- Pergunta: "No relatório final, posso escrever Starter ou preciso usar o termo padronizado do glossário?"
+  agent_ids: [0,3]
+  confidence: 0.92
+  reason: "Pergunta de padronização terminológica/glossário institucional."
+  alternatives: [2]
+
+- Pergunta: "Como rotular o provolone fresco quando for usado aroma de fumaça?"
+  agent_ids: [0,3]
+  confidence: 0.95
+  reason: "Rotulagem e denominação de venda são temas regulatórios."
+  alternatives: [1]
+
+- Pergunta: "Qual rotação e tempo da centrifugação no ácido siálico?"
+  agent_ids: [0,3,4]
+  confidence: 0.95
+  reason: "Método analítico laboratorial de qualidade do leite."
+  alternatives: []
+
+- Pergunta: "Em qual faixa de pH deve ser feito o corte da coalhada no queijo?"
+  agent_ids: [0,3,1]
+  confidence: 0.93
+  reason: "Parâmetro de processo de fabricação de queijo."
+  alternatives: [2]
+
+- Pergunta: "Como rotular o provolone maturado quando for usado aroma de fumaça?"
+  agent_ids: [0,3]
+  confidence: 0.95
+  reason: "Pergunta normativa de rotulagem/denominação, mesmo citando queijo."
+  alternatives: [1,6]
+
+- Pergunta: "No relatório final, posso manter Rennet em inglês ou devo padronizar o termo?"
+  agent_ids: [0,3]
+  confidence: 0.92
+  reason: "Padronização terminológica de glossário institucional."
+  alternatives: [1,2]
+
+- Pergunta: "Como CCS elevada influencia o risco de amargor no queijo?"
+  agent_ids: [0,3,1,4]
+  confidence: 0.88
+  reason: "CCS é métrica de qualidade do leite (agente 4), mas o impacto no queijo (amargor) é tecnologia de queijos (agente 1). Agente 1 como primário."
+  alternatives: [4]
+
+- Pergunta: "Quais fatores de processo aumentam o risco de CLC no queijo?"
+  agent_ids: [0,3,1]
+  confidence: 0.92
+  reason: "CLC é defeito técnico de queijo coberto nas bases Ha-La Biotec. Agente 1 — não Agente 5 (que é diagnóstico visual)."
+  alternatives: []
+
+- Pergunta: "Na prevenção de estufamento tardio, quais abordagens o documento compara?"
+  agent_ids: [0,3,1]
+  confidence: 0.93
+  reason: "Estufamento tardio é defeito técnico de queijo (Clostridium) — Agente 1 tem artigos sobre isso."
+  alternatives: []
+
+- Pergunta: "Para dizer que um produto não contém gordura total, basta zerar gordura total?"
+  agent_ids: [0,3]
+  confidence: 0.96
+  reason: "Alegação de ausência de nutriente é critério de rotulagem regulatória (RDC 54). Tema regulatório, não de produto."
+  alternatives: []
+
+- Pergunta: "Sou obrigado a ter local para produto suspeito, reinspeção e aproveitamento condicional?"
+  agent_ids: [0,3]
+  confidence: 0.96
+  reason: "Requisito de instalações físicas para fiscalização — linguagem operacional RIISPOA."
+  alternatives: []
+
+- Pergunta: "Como deve ser a denominação quando há ingredientes adicionais?"
+  agent_ids: [0,3]
+  confidence: 0.95
+  reason: "Denominação de venda é tema de rotulagem regulatória, mesmo sem citar produto específico."
+  alternatives: [1]
+
+- Pergunta: "Qual resultado positivo no método B para análise do leite?"
+  agent_ids: [0,3,4]
+  confidence: 0.94
+  reason: "Método B é método analítico da IN 68 — Qualidade do Leite."
+  alternatives: []
+
+- Pergunta: "As proteínas do soro conseguem formar gel com a mesma eficiência da caseína?"
+  agent_ids: [0,3,2]
+  confidence: 0.88
+  reason: "Propriedades de geleificação de proteínas do soro são relevantes para fermentados (iogurte). Agente 2."
+  alternatives: [1]
+
+- Pergunta: "Qual categoria de iogurte é descrita como indulgente e aveludada?"
+  agent_ids: [0,3,2]
+  confidence: 0.91
+  reason: "Categorias sensoriais de iogurte — Fermentados (Agente 2)."
+  alternatives: []
+
+- Pergunta: "Quais características sensoriais o minas padrão deve apresentar segundo a normativa?"
+  agent_ids: [0,3]
+  confidence: 0.96
+  reason: "Padrão de identidade sensorial de produto lácteo é definido em Instrução Normativa — Regulatórios (Agente 3), não Queijos."
+  alternatives: [1]
+
+- Pergunta: "Como deve ser rotulado o provolone defumado quando usado aroma artificial?"
+  agent_ids: [0,3]
+  confidence: 0.96
+  reason: "Denominação de venda e rotulagem com aroma artificial é critério regulatório — Agente 3."
+  alternatives: [1]
+
+- Pergunta: "O minas frescal pode conter substâncias estranhas de acordo com a IN vigente?"
+  agent_ids: [0,3]
+  confidence: 0.97
+  reason: "Substâncias estranhas no contexto de padrão de identidade são requisito regulatório. Tema de Agente 3, não de Queijos."
+  alternatives: []
+
+- Pergunta: "Quais as formas de apresentação permitidas para a ricota segundo a normativa?"
+  agent_ids: [0,3]
+  confidence: 0.96
+  reason: "Formas de apresentação são definidas nos regulamentos técnicos de identidade (INs). Agente 3."
+  alternatives: [1]
+
+- Pergunta: "Quais cuidados de segurança devo ter ao trabalhar com inflamáveis no laboratório de leite?"
+  agent_ids: [0,3,4]
+  confidence: 0.93
+  reason: "Segurança com inflamáveis em laboratório está nas Recomendações Gerais da IN 68 — Qualidade do Leite (Agente 4)."
+  alternatives: []
+
+- Pergunta: "Em que unidades se expressa a concentração m/m e m/v nos métodos da IN 68?"
+  agent_ids: [0,3,4]
+  confidence: 0.94
+  reason: "Notação m/m e m/v são unidades de concentração nos métodos analíticos da IN 68 — Qualidade do Leite."
+  alternatives: []
+
+- Pergunta: "Como preparar a solução de azul de metileno para os testes da IN 68?"
+  agent_ids: [0,3,4]
+  confidence: 0.94
+  reason: "Azul de metileno é indicador usado nos métodos analíticos da IN 68 — Qualidade do Leite."
+  alternatives: []
+
+- Pergunta: "Qual o comprimento de onda utilizado na leitura de absorbância para o método de ácido sórbico?"
+  agent_ids: [0,3,4]
+  confidence: 0.93
+  reason: "Absorbância e comprimento de onda são parâmetros de espectrofotometria nos métodos quantitativos da IN 68 — Qualidade do Leite."
+  alternatives: []
+
+- Pergunta: "Não inalar vapores é recomendação de qual documento da IN 68?"
+  agent_ids: [0,3,4]
+  confidence: 0.95
+  reason: "Recomendação de segurança 'Não inalar vapores' está nas Recomendações Gerais da IN 68 — Qualidade do Leite."
+  alternatives: []
+"""
+
+# Palavras muito amplas que não devem disparar especialista sozinhas.
+_LOW_PRECISION_KEYWORDS = {
+    "leite", "qualidade", "queijo", "acidez", "pH", "ph", "cultura",
+    "fermentado", "defeito", "problema", "sabor", "textura", "ingrediente",
+    "receita", "validade", "analise", "norma",
+}
+_HINT_NOISE_TERMS = {
+    "edicao", "edição", "dados", "serie", "série", "grafico", "gráfico",
+    "imagem", "linha", "eixo", "bibliografia", "nacional", "oficiais",
+    "metodos", "métodos", "comum",
+}
+_HINT_NOISE_TOKENS = {
+    "edicao", "edição", "parte", "trimestral", "jan", "fev", "mar",
+    "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez",
+    "todo", "mundo", "popular",
+}
+
+# Hints de alta precisão default para fast-path (fallback local).
+_SPECIALIST_STRONG_HINTS_DEFAULT: Dict[int, set] = {
+    1: {
+        "mussarela", "muçarela", "mozarela", "filagem", "prensagem", "maturacao",
+        "maturação", "provolone", "pizza", "browning", "derretimento",
+        # Defeitos técnicos de queijo — cobertos pelos artigos Ha-La Biotec (fix confusão 1→5)
+        "estufamento", "clostridium", "rancoso", "rançoso", "olhadura", "trinca",
+        "amargor", "defeito butirico", "defeito butírico", "clc", "heterolatic",
+        "butirico", "butírico",
+    },
+    2: {
+        "iogurte", "kefir", "coalhada", "sinérese", "sinerese",
+        "acido latico", "ácido lático", "pos-acidificacao", "pós-acidificação",
+        "skyr", "nslab",
+    },
+    4: {
+        "dornic", "ccs", "cbt", "crioscopia", "alizarol", "formaldeido",
+        "formaldeído", "acidez titulavel", "acidez titulável",
+        "mastite", "celulas somaticas",
+    },
+    5: {
+        # Agent 5 terá dados de diagnóstico visual de defeitos (imagens).
+        # Termos técnicos de defeitos movidos para Agent 1 (Ha-La Biotec cobre isso).
+        # Deixar vazio por ora — será preenchido quando a KB visual for ingerida.
+    },
+    6: {
+        "formulacao", "formulação", "shelf-life", "shelf life", "estabilizante",
+        "espessante", "aromatizante",
+    },
 }
 
 _ROUTING_BASELINE_IDS = [0, 3]
 _ROUTING_CONFIDENCE_THRESHOLDS = {
-    "high": 0.80,
+    "high": 0.86,
     "medium": 0.55,
 }
 _SPECIALISTS_PER_BUCKET = {
@@ -138,9 +566,106 @@ def _load_taxonomy_nearest_map() -> Dict[int, List[int]]:
 
 
 _NEAREST_SPECIALIST_MAP = _load_taxonomy_nearest_map()
+_AGENT_TABLE_BY_ID: Dict[int, str] = {
+    int(agent["agent_id"]): str(agent.get("table_name", ""))
+    for agent in AGENTS
+    if str(agent.get("table_name", "")).strip()
+}
+_ALL_AGENT_TABLES: List[str] = []
+for _agent in AGENTS:
+    _table = str(_agent.get("table_name", "")).strip()
+    if _table and _table not in _ALL_AGENT_TABLES:
+        _ALL_AGENT_TABLES.append(_table)
 
 
-def _choose_primary_agent_id(agent_ids: List[int]) -> int:
+def _load_specialist_strong_hints() -> Dict[int, set]:
+    """Carrega hints fortes de especialistas derivados do rag_queries.
+
+    Fonte esperada:
+      docs/orchestrator/day1/ROUTING_SPECIALIST_HINTS.yaml
+
+    Se indisponível, retorna apenas hints default.
+    """
+    def _norm(value: str) -> str:
+        v = (value or "").lower().strip()
+        v = unicodedata.normalize("NFKD", v)
+        v = "".join(ch for ch in v if not unicodedata.combining(ch))
+        v = re.sub(r"\s+", " ", v)
+        return v
+
+    merged: Dict[int, set] = {}
+    agent_keyword_tokens: Dict[int, set] = {}
+    for agent in AGENTS:
+        try:
+            aid = int(agent.get("agent_id", -1))
+        except (TypeError, ValueError):
+            continue
+        if aid in (0, 3):
+            continue
+        toks: set = set()
+        for raw_kw in (agent.get("keywords", []) or []):
+            kw_norm = _norm(str(raw_kw))
+            for tk in kw_norm.split():
+                if len(tk) >= 4 and tk not in _LOW_PRECISION_KEYWORDS:
+                    toks.add(tk)
+        agent_keyword_tokens[aid] = toks
+
+    for aid, hints in _SPECIALIST_STRONG_HINTS_DEFAULT.items():
+        merged[aid] = {_norm(str(h)) for h in hints if str(h).strip()}
+
+    hints_path = Path("docs/orchestrator/day1/ROUTING_SPECIALIST_HINTS.yaml")
+    if not hints_path.exists():
+        return merged
+
+    try:
+        import yaml  # type: ignore
+        raw = yaml.safe_load(hints_path.read_text(encoding="utf-8")) or {}
+        specialists = raw.get("specialists", {}) or {}
+        for raw_aid, info in specialists.items():
+            try:
+                aid = int(raw_aid)
+            except (TypeError, ValueError):
+                continue
+            if aid in (0, 3):
+                continue
+            hints = info.get("strong_hints_normalized", []) if isinstance(info, dict) else []
+            if not isinstance(hints, list):
+                continue
+            bucket = merged.setdefault(aid, set())
+            default_bucket = merged.get(aid, set())
+            for hint in hints:
+                normalized = _norm(str(hint))
+                if normalized:
+                    # Segurança de produção: aceita do arquivo apenas hints
+                    # multi-palavra (mais específicos) ou já presentes no default.
+                    if normalized in _HINT_NOISE_TERMS:
+                        continue
+                    if any(ch.isdigit() for ch in normalized):
+                        continue
+                    if any(tok in _HINT_NOISE_TOKENS for tok in normalized.split()):
+                        continue
+                    if normalized not in default_bucket and len(normalized.split()) > 2:
+                        continue
+                    if normalized not in default_bucket and " " not in normalized:
+                        continue
+                    if normalized in _LOW_PRECISION_KEYWORDS:
+                        continue
+                    if normalized not in default_bucket:
+                        tokens = [t for t in normalized.split() if len(t) >= 4]
+                        kw_tokens = agent_keyword_tokens.get(aid, set())
+                        if tokens and kw_tokens and not any(t in kw_tokens for t in tokens):
+                            continue
+                    bucket.add(normalized)
+    except Exception:
+        return merged
+
+    return merged
+
+
+_SPECIALIST_STRONG_HINTS = _load_specialist_strong_hints()
+
+
+def _choose_primary_agent_id(agent_ids: List[int], route_text: str = "") -> int:
     """Escolhe o agente principal para exibicao ao cliente.
 
     Regra:
@@ -150,6 +675,10 @@ def _choose_primary_agent_id(agent_ids: List[int]) -> int:
     """
     if not agent_ids:
         return 0
+
+    domain_primary = _infer_domain_primary_from_text(route_text, agent_ids)
+    if domain_primary is not None:
+        return domain_primary
 
     # Especialistas de dominio (na ordem de relevancia original)
     for aid in agent_ids:
@@ -419,6 +948,27 @@ def _build_keyword_sets() -> Dict[int, set]:
 _SPECIALIST_KEYWORDS = _build_keyword_sets()
 
 
+def _contains_keyword(text_norm: str, keyword_norm: str) -> bool:
+    if not keyword_norm:
+        return False
+    # Match por fronteira para evitar falso-positivo por substring.
+    pattern = rf"(?<!\w){re.escape(keyword_norm)}(?!\w)"
+    return re.search(pattern, text_norm) is not None
+
+
+def _keyword_weight(aid: int, keyword_norm: str) -> int:
+    strong = _SPECIALIST_STRONG_HINTS.get(aid, set())
+    if keyword_norm in strong:
+        return 3
+    if keyword_norm in _LOW_PRECISION_KEYWORDS:
+        return 0
+    if " " in keyword_norm:
+        return 2
+    if len(keyword_norm) >= 9:
+        return 2
+    return 1
+
+
 def _cache_get(cache_key: str) -> Optional[List[int]]:
     if _MAX_CLASSIFICATION_CACHE <= 0:
         return None
@@ -456,6 +1006,228 @@ def _contains_dairy_signal(text_norm: str) -> bool:
     return False
 
 
+def _contains_any_phrase(text_norm: str, phrases: set) -> bool:
+    for phrase in phrases:
+        p = _normalize_text(str(phrase))
+        if not p:
+            continue
+        if " " in p:
+            if p in text_norm:
+                return True
+        else:
+            if re.search(rf"(?<!\w){re.escape(p)}(?!\w)", text_norm):
+                return True
+    return False
+
+
+def _is_strong_regulatory_signal(text_norm: str) -> bool:
+    if not text_norm:
+        return False
+    if _contains_any_phrase(text_norm, _REGULATORY_STRONG_TERMS):
+        return True
+    if re.search(r"\b(in|rdc)\s*\d{1,4}\b", text_norm):
+        return True
+    return False
+
+
+def _is_strong_quality_signal(text_norm: str) -> bool:
+    if not text_norm:
+        return False
+    return _contains_any_phrase(text_norm, _QUALITY_STRONG_TERMS)
+
+
+def _is_strong_fermented_signal(text_norm: str) -> bool:
+    if not text_norm:
+        return False
+    return _contains_any_phrase(text_norm, _FERMENTED_STRONG_TERMS)
+
+
+def _is_strong_cheese_signal(text_norm: str) -> bool:
+    if not text_norm:
+        return False
+    return _contains_any_phrase(text_norm, _CHEESE_STRONG_TERMS)
+
+
+def _is_glossary_or_normalization_signal(text_norm: str) -> bool:
+    if not text_norm:
+        return False
+    explicit_markers = (
+        "termo correto",
+        "significado esperado",
+        "como deve ser padronizado",
+        "preciso usar o termo padronizado",
+        "em ingles",
+        "em inglês",
+        "padronizar",
+        "padronizado",
+        "glossario",
+        "glossário",
+    )
+    if any(m in text_norm for m in explicit_markers):
+        return True
+    # Linguagem corporativa/produto da base geral com "termo" ou "significado".
+    brand_terms = ("coagusens", "coagutrack", "rennet", "starter", "endogenous", "phage", "fagos")
+    if any(t in text_norm for t in brand_terms) and ("termo" in text_norm or "significado" in text_norm):
+        return True
+    # Instrumentos e índices de coagulação — sempre Base Geral (fix confusão 0→1)
+    # Perguntas sobre Coagutrack/CoaguSens/quimosina/índice C/P são conceitos do
+    # glossário base, mesmo sem a palavra "termo" na pergunta.
+    coag_instruments = ("coagutrack", "coagusens", "coagulometro", "coagulômetro")
+    if any(t in text_norm for t in coag_instruments):
+        return True
+    if "fermento repicado" in text_norm:
+        return True
+    if ("indice" in text_norm or "índice") and "c/p" in text_norm:
+        return True
+    if "enzima coagulante" in text_norm and "queij" not in text_norm:
+        return True
+    return False
+
+
+def _is_labeling_regulatory_signal(text_norm: str) -> bool:
+    if not text_norm:
+        return False
+    labeling_terms = (
+        "rotular",
+        "rotulado",   # "Como deve ser rotulado o provolone?" — "rotular" não match "rotulado"
+        "rotulagem",
+        "denominacao",
+        "denominação",
+        "denominacao de venda",
+        "denominação de venda",
+        "embalagem",
+    )
+    if any(t in text_norm for t in labeling_terms):
+        # Denominação de venda é sempre regulatória, com ou sem produto explícito
+        # (fix confusão 3→1: "Como deve ser a denominação quando há ingredientes adicionais?")
+        if "denominacao" in text_norm or "denominação" in text_norm:
+            return True
+        dairy_product_terms = (
+            "provolone", "ricota", "minas", "queijo", "iogurte", "bebida lactea",
+            "bebida láctea", "cream cheese", "mussarela", "muçarela",
+            "sobremesa lactea", "sobremesa láctea", "requeijao", "requeijão",
+        )
+        if any(p in text_norm for p in dairy_product_terms):
+            return True
+    # Alegações de ausência/composição sem o termo "rotulagem" (fix confusão 3→1)
+    # Ex.: "Para dizer que um produto não contém gordura total..."
+    absence_claims = (
+        "nao contem", "não contém", "isento de", "sem adicao de",
+        "valor nulo", "zerar gordura", "zerar acucar",
+    )
+    nutritional_terms = (
+        "gordura", "acucar", "açúcar", "sodio", "sódio",
+        "calorias", "energetico", "energético",
+    )
+    if any(ac in text_norm for ac in absence_claims) and any(nt in text_norm for nt in nutritional_terms):
+        return True
+    return False
+
+
+def _is_normative_regulatory_signal(text_norm: str) -> bool:
+    if not text_norm:
+        return False
+    markers = (
+        "norma", "normas", "regulamento", "requisito legal", "requisitos legais",
+        "instrução normativa", "instrucao normativa", "rdc", "riispoa", "decreto", "art.",
+    )
+    if any(m in text_norm for m in markers):
+        return True
+    return bool(re.search(r"\b(in|rdc)\s*\d{1,4}\b", text_norm))
+
+
+def _is_troubleshooting_defect_intent(text_norm: str) -> bool:
+    if not text_norm:
+        return False
+    markers = (
+        "defeito", "defeitos", "diagnostico", "diagnóstico", "causa", "causas",
+        "corrigir", "correcao", "correção", "estufamento", "rançoso", "rancoso",
+        "trinca", "olhadura", "contaminacao", "contaminação", "problema", "problemas",
+    )
+    return any(m in text_norm for m in markers)
+
+
+def _is_ambiguous_cheese_fermented_signal(text_norm: str) -> bool:
+    return _is_strong_cheese_signal(text_norm) and _is_strong_fermented_signal(text_norm)
+
+
+def _is_general_knowledge_signal(text_norm: str) -> bool:
+    if not text_norm:
+        return False
+    if (
+        _is_strong_regulatory_signal(text_norm)
+        or _is_strong_quality_signal(text_norm)
+        or _is_strong_fermented_signal(text_norm)
+        or _is_strong_cheese_signal(text_norm)
+    ):
+        return False
+    if _is_glossary_or_normalization_signal(text_norm):
+        return True
+    if _contains_any_phrase(text_norm, _GENERAL_KNOWLEDGE_TERMS):
+        return True
+    if re.match(r"^quem\b", text_norm) and (
+        "distribui" in text_norm or "fabricante" in text_norm or "empresa" in text_norm
+    ):
+        return True
+    return False
+
+
+def _infer_domain_primary_from_text(text: str, candidate_ids: List[int]) -> Optional[int]:
+    text_norm = _normalize_text(text)
+    ids = _sanitize_agent_ids(candidate_ids)
+    if not ids:
+        return None
+
+    if _is_normative_regulatory_signal(text_norm) and 3 in ids:
+        return 3
+
+    # Perguntas de glossário/padronização da linguagem corporativa devem manter 0.
+    if _is_glossary_or_normalization_signal(text_norm) and 0 in ids:
+        return 0
+
+    # Rotulagem/denominação/embalagem em produto lácteo é tema regulatório.
+    if _is_labeling_regulatory_signal(text_norm) and 3 in ids:
+        return 3
+
+    # Precedencia forte: regulatorio e qualidade (metodos analiticos) devem dominar.
+    if _is_strong_regulatory_signal(text_norm) and 3 in ids:
+        return 3
+    if _is_strong_quality_signal(text_norm) and 4 in ids:
+        # CCS/mastite + impacto em queijo → Agente 1 é o primário (fix confusão 1→4)
+        # Ex.: "Como CCS elevada influencia o amargor no queijo?"
+        _cheese_quality_impact = (
+            "amargor", "proteolise", "proteólise", "rendimento",
+            "maturacao", "maturação", "coagulacao", "coagulação",
+        )
+        if _is_strong_cheese_signal(text_norm) and 1 in ids:
+            if any(t in text_norm for t in _cheese_quality_impact):
+                return 1
+        return 4
+    if _is_strong_fermented_signal(text_norm) and 2 in ids:
+        if 1 in ids and ("queijo" in text_norm or "coalhada" in text_norm):
+            return 1
+        return 2
+    if _is_strong_cheese_signal(text_norm) and 1 in ids:
+        # Defeitos técnicos em queijo → Agente 1 (fix confusão 1→5)
+        # Agente 5 é para diagnóstico visual; termos de defeito agora pertencem a Agent 1
+        return 1
+
+    # Regras por especialista com alta precisao.
+    specialist_order = [4, 2, 1, 5, 6]
+    for aid in specialist_order:
+        if aid not in ids:
+            continue
+        hints = _SPECIALIST_STRONG_HINTS.get(aid, set())
+        if any(_contains_keyword(text_norm, h) for h in hints):
+            return aid
+
+    # Perguntas gerais/institucionais: manter Base Geral como primaria.
+    if _is_general_knowledge_signal(text_norm) and 0 in ids:
+        return 0
+
+    return None
+
+
 def _rule_based_route(user_text: str) -> Optional[List[int]]:
     text = _normalize_text(_strip_profile_suffix(user_text))
     if not text:
@@ -464,26 +1236,110 @@ def _rule_based_route(user_text: str) -> Optional[List[int]]:
     if _looks_like_greeting_only(text):
         return []
 
+    # Intenção de glossário/padronização institucional (Base Geral).
+    if _is_glossary_or_normalization_signal(text):
+        return [0, 3]
+
+    # IN 68 é especificamente um documento de métodos analíticos de Qualidade do Leite.
+    # Se a pergunta menciona IN 68 + termos de laboratório/análise, inclui Agente 4.
+    # Deve ser verificado ANTES de _is_normative_regulatory_signal (que captura "in 68" via regex).
+    if re.search(r"\bin\s*68\b", text) and (
+        any(t in text for t in _QUALITY_LAB_TERMS) or _is_strong_quality_signal(text)
+    ):
+        return [0, 3, 4]
+
+    # Contexto normativo explícito deve permanecer no regulatório.
+    if _is_normative_regulatory_signal(text):
+        return [0, 3]
+
+    # Precedencia forte de domínio:
+    # 1) Regulatório domina quando houver sinal normativo claro.
+    # 2) Métodos/qualidade domina para perguntas analíticas de laboratório.
+    if _is_labeling_regulatory_signal(text):
+        return [0, 3]
+    if _is_strong_regulatory_signal(text):
+        return [0, 3]
+    if _is_strong_quality_signal(text):
+        # CCS/mastite + impacto em queijo → incluir Agente 1 (fix confusão 1→4)
+        if _is_strong_cheese_signal(text):
+            return [0, 3, 4, 1]
+        return [0, 3, 4]
+    if _is_ambiguous_cheese_fermented_signal(text):
+        return [0, 3, 1, 2]
+    if _is_strong_fermented_signal(text):
+        if "queijo" in text or "coalhada" in text:
+            return [0, 3, 1]
+        return [0, 3, 2]
+    if _is_strong_cheese_signal(text):
+        # Defeitos/troubleshooting em queijo → Agente 1 (Ha-La Biotec cobre)
+        # Agente 5 = diagnóstico visual por imagem (KB ainda não ingerida)
+        # (fix confusão 1→5: removido roteamento para Agente 5 em contexto de queijo)
+        return [0, 3, 1]
+
     # Perguntas de laboratorio/controle de qualidade (inclui seguranca em lab)
     # devem consultar Qualidade do Leite mesmo sem termos "dairy" explicitos.
     if any(term in text for term in _QUALITY_LAB_TERMS):
         return [0, 3, 4]
 
-    specialist_scores: List[tuple[int, int]] = []
-    for aid, keywords in _SPECIALIST_KEYWORDS.items():
-        score = sum(1 for kw in keywords if kw and kw in text)
+    # Regras determinísticas para intents críticas (alta precisão).
+    intent_scores: Dict[int, int] = {}
+    for aid, patterns in _INTENT_PATTERNS_BY_AGENT.items():
+        score = 0
+        for pat in patterns:
+            if re.search(pat, text):
+                score += 1
         if score > 0:
-            specialist_scores.append((aid, score))
+            intent_scores[aid] = score
 
-    specialist_scores.sort(key=lambda x: x[1], reverse=True)
+    if intent_scores:
+        # Se houver empates entre especialistas não-regulatórios, delega ao LLM
+        # para evitar escolha arbitrária em perguntas híbridas.
+        sorted_scores = sorted(intent_scores.items(), key=lambda x: x[1], reverse=True)
+        best_aid, best_score = sorted_scores[0]
+        tied_best = [aid for aid, sc in sorted_scores if sc == best_score]
+        non_reg_tied = [aid for aid in tied_best if aid != 3]
+        if len(non_reg_tied) > 1:
+            return None
 
-    # Alta confiança: 2+ keywords do mesmo especialista.
-    high_conf = [aid for aid, score in specialist_scores if score >= 2]
+        # Regras regulatórias ficam no baseline [0,3].
+        if best_aid == 3:
+            return [0, 3]
+        return _sanitize_agent_ids([0, 3, best_aid])
+
+    specialist_scores: List[tuple[int, int, int]] = []  # (aid, weighted, hits)
+    for aid, keywords in _SPECIALIST_KEYWORDS.items():
+        weighted = 0
+        hits = 0
+        for kw in keywords:
+            if not kw:
+                continue
+            if _contains_keyword(text, kw):
+                w = _keyword_weight(aid, kw)
+                if w <= 0:
+                    continue
+                weighted += w
+                hits += 1
+        if hits > 0:
+            specialist_scores.append((aid, weighted, hits))
+
+    specialist_scores.sort(key=lambda x: (x[1], x[2]), reverse=True)
+
+    # Alta confiança: >=2 hits úteis, ou 1 hit forte (peso >=3).
+    high_conf = [aid for aid, weighted, hits in specialist_scores if hits >= 2 or weighted >= 3]
     if high_conf:
-        ids = [0, 3] + high_conf[:3]
-        return ids
+        return _sanitize_agent_ids([0, 3] + high_conf[:3])
 
-    # Domínio dairy evidente, mas sem especialista forte -> baseline [0, 3].
+    # Confiança média: 1 hit específico relevante.
+    medium_conf = [aid for aid, weighted, hits in specialist_scores if weighted >= 2 and hits >= 1]
+    if medium_conf:
+        return _sanitize_agent_ids([0, 3] + medium_conf[:2])
+
+    # Se parece pergunta técnica de laticínios, evita cair em [0,3] cego;
+    # delega ao classificador LLM para escolher especialista.
+    if _contains_dairy_signal(text) and _is_objective_question(text):
+        return None
+
+    # Domínio dairy genérico (não objetivo) segue baseline.
     if _contains_dairy_signal(text):
         return [0, 3]
 
@@ -491,11 +1347,18 @@ def _rule_based_route(user_text: str) -> Optional[List[int]]:
     return None
 
 
+# Agentes sem KB ingerida — removidos de qualquer rota até a base estar disponível.
+# LEMBRETE: remover 5 e 6 deste set quando as KBs forem ingeridas:
+#   - Agente 5 (defeitos visuais): aguardando imagens do cliente
+#   - Agente 6 (formulação): aguardando documentos do cliente
+_AGENTS_WITHOUT_KB: set[int] = {5, 6}
+
+
 def _sanitize_agent_ids(raw_ids: List[int]) -> List[int]:
     seen = set()
     out: List[int] = []
     for aid in raw_ids:
-        if 0 <= aid <= 6 and aid not in seen:
+        if 0 <= aid <= 6 and aid not in seen and aid not in _AGENTS_WITHOUT_KB:
             seen.add(aid)
             out.append(aid)
     return out
@@ -518,13 +1381,56 @@ def _confidence_to_bucket(confidence: float) -> str:
 
 
 def _estimate_fastpath_confidence(route_text: str, agent_ids: List[int]) -> float:
+    text_norm = _normalize_text(route_text)
     if not agent_ids:
         return 0.98
+    if _is_strong_regulatory_signal(text_norm) or _is_strong_quality_signal(text_norm):
+        return 0.86
     if any(aid not in _ROUTING_BASELINE_IDS for aid in agent_ids):
-        return 0.92
-    if _contains_dairy_signal(_normalize_text(route_text)):
+        return 0.84
+    if _contains_dairy_signal(text_norm):
         return 0.72
     return 0.60
+
+
+def _recalibrate_confidence(route_text: str, agent_ids: List[int], raw_confidence: float) -> float:
+    """Recalibra confiança para evitar excesso de 'high' em casos ambíguos."""
+    conf = _clamp_confidence(raw_confidence)
+    ids = _sanitize_agent_ids(agent_ids)
+    text_norm = _normalize_text(route_text)
+    specialists = [aid for aid in ids if aid not in _ROUTING_BASELINE_IDS]
+
+    # Sem agente: fora de escopo costuma ter alta confiança.
+    if not ids:
+        return conf
+
+    # Baseline puro para pergunta objetiva dairy deve cair para medium.
+    if set(ids) <= set(_ROUTING_BASELINE_IDS) and _contains_dairy_signal(text_norm) and _is_objective_question(text_norm):
+        conf = min(conf, 0.69)
+
+    # Regulatório/laboratorial são domínios de alta especificidade.
+    if _is_strong_regulatory_signal(text_norm):
+        if 3 in ids:
+            conf = max(conf, 0.84)
+        # Evita superconfiança quando há especialista concorrendo com regulatório.
+        if any(aid not in (0, 3) for aid in ids):
+            conf = min(conf, 0.78)
+
+    if _is_strong_quality_signal(text_norm):
+        if 4 in ids:
+            conf = max(conf, 0.84)
+        if any(aid not in (0, 3, 4) for aid in ids):
+            conf = min(conf, 0.78)
+
+    # Mais de um especialista tende a aumentar ambiguidade.
+    if len(specialists) > 1:
+        conf = min(conf, 0.74)
+
+    # Se parece pergunta geral institucional, evita high artificial.
+    if _is_general_knowledge_signal(text_norm) and 0 in ids and len(specialists) == 0:
+        conf = min(conf, 0.70)
+
+    return _clamp_confidence(conf)
 
 
 def _apply_dairy_hard_constraints(route_text: str, agent_ids: List[int]) -> List[int]:
@@ -546,6 +1452,30 @@ def _apply_dairy_hard_constraints(route_text: str, agent_ids: List[int]) -> List
     return _sanitize_agent_ids(baseline + tail)
 
 
+def _apply_domain_guardrails(route_text: str, agent_ids: List[int], alternatives: List[int]) -> Tuple[List[int], List[int]]:
+    """Aplica guardrails de domínio para reduzir confusão entre especialistas."""
+    text_norm = _normalize_text(route_text)
+    ids = _sanitize_agent_ids(agent_ids)
+    alts = _sanitize_agent_ids(alternatives)
+
+    if not ids and not _contains_dairy_signal(text_norm):
+        return ids, alts
+
+    if _is_strong_regulatory_signal(text_norm):
+        ids = _sanitize_agent_ids([0, 3] + [aid for aid in ids if aid not in _ROUTING_BASELINE_IDS and aid == 3])
+        alts = [aid for aid in alts if aid not in (1, 2, 4, 5, 6)]
+        return ids, alts
+
+    if _is_strong_quality_signal(text_norm):
+        if 4 not in ids:
+            ids = _sanitize_agent_ids(ids + [4])
+        # Evita competição desnecessária com outros especialistas em perguntas de método.
+        alts = [aid for aid in alts if aid in (4,)]
+        return ids, alts
+
+    return ids, alts
+
+
 def _build_execution_plan(
     route_text: str,
     chosen_ids: List[int],
@@ -563,6 +1493,9 @@ def _build_execution_plan(
     has_specialist = any(aid not in _ROUTING_BASELINE_IDS for aid in chosen)
     has_baseline_pair = all(aid in chosen for aid in _ROUTING_BASELINE_IDS)
     is_dairy_route = has_dairy_signal or has_specialist or has_baseline_pair
+    strong_reg = _is_strong_regulatory_signal(text_norm)
+    strong_quality = _is_strong_quality_signal(text_norm)
+    ambiguous_12 = _is_ambiguous_cheese_fermented_signal(text_norm)
 
     if is_dairy_route:
         # Se a classificação já apontou domínio lácteo (baseline e/ou especialista),
@@ -582,7 +1515,19 @@ def _build_execution_plan(
             if aid not in _ROUTING_BASELINE_IDS and aid not in specialists:
                 specialists.append(aid)
 
+        # Guardrail de precedencia: evita ruido de especialista quando a pergunta
+        # e claramente normativa ou de metodo analitico de qualidade.
+        if strong_reg:
+            specialists = []
+        elif strong_quality:
+            specialists = [aid for aid in specialists if aid == 4]
+
         max_specialists = _SPECIALISTS_PER_BUCKET.get(bucket, 3)
+
+        # Ambiguidade real entre queijo e fermentado:
+        # permite 2 especialistas para elevar recall@3 sem abrir demais.
+        if ambiguous_12 and 1 in specialists and 2 in specialists:
+            max_specialists = max(max_specialists, 2)
 
         # Se houver especialista na classificação/alternativas, garante ao menos 1.
         if specialists and max_specialists < 1:
@@ -677,6 +1622,21 @@ def _has_weak_or_conflicting_evidence(responses: List[Dict[str, Any]]) -> bool:
     return False
 
 
+def _has_specialist_factual_evidence(responses: List[Dict[str, Any]]) -> bool:
+    for item in responses:
+        aid = int(item.get("agent_id", -1))
+        if aid in _ROUTING_BASELINE_IDS:
+            continue
+        if not item.get("success"):
+            continue
+        txt = str(item.get("response", "")).strip()
+        if not txt:
+            continue
+        if _extract_factual_candidate(txt):
+            return True
+    return False
+
+
 def _should_trigger_fallback(state: OrchestratorState) -> Tuple[bool, str]:
     attempts = int(state.get("fallback_attempts", 0) or 0)
     if attempts >= _FALLBACK_MAX_ATTEMPTS:
@@ -691,10 +1651,223 @@ def _should_trigger_fallback(state: OrchestratorState) -> Tuple[bool, str]:
     if bucket == "low":
         return True, "low_confidence_bucket"
 
+    if bucket == "medium" and _has_specialist_factual_evidence(responses):
+        return False, "specialist_evidence_sufficient"
+
     if _has_weak_or_conflicting_evidence(responses):
         return True, "weak_or_conflicting_evidence"
 
     return False, "sufficient_evidence"
+
+
+def _collect_general_fallback_tables(state: "OrchestratorState") -> List[str]:
+    """Seleciona tabelas para fallback geral priorizando contexto atual."""
+    ordered_agent_ids: List[int] = []
+
+    for aid in _sanitize_agent_ids(state.get("execution_plan", [])):
+        if aid not in ordered_agent_ids:
+            ordered_agent_ids.append(aid)
+    for aid in _sanitize_agent_ids(state.get("chosen_agent_ids", [])):
+        if aid not in ordered_agent_ids:
+            ordered_agent_ids.append(aid)
+    for aid in _sanitize_agent_ids(state.get("routing_alternatives", [])):
+        if aid not in ordered_agent_ids:
+            ordered_agent_ids.append(aid)
+
+    # Completa com todos os agentes para realmente virar "base geral".
+    for aid in sorted(_AGENT_TABLE_BY_ID):
+        if aid not in ordered_agent_ids:
+            ordered_agent_ids.append(aid)
+
+    tables: List[str] = []
+    for aid in ordered_agent_ids:
+        table = _AGENT_TABLE_BY_ID.get(aid, "").strip()
+        if table and table not in tables:
+            tables.append(table)
+
+    if not tables:
+        tables = list(_ALL_AGENT_TABLES)
+
+    cap = max(1, int(GENERAL_INDEX_FALLBACK_MAX_TABLES))
+    return tables[:cap]
+
+
+def _should_use_general_index_fallback(
+    state: "OrchestratorState",
+    successful_responses: List[Dict[str, Any]],
+) -> Tuple[bool, str]:
+    if not ENABLE_GENERAL_INDEX_FALLBACK:
+        return False, "general_index_disabled"
+
+    # Evita uso em saudação/off-topic.
+    if not state.get("chosen_agent_ids"):
+        return False, "no_dairy_route"
+
+    user_text = _strip_profile_suffix(_get_last_user_text(state.get("messages", [])))
+    text_norm = _normalize_text(user_text)
+    if not text_norm:
+        return False, "empty_query"
+
+    if GENERAL_INDEX_FALLBACK_REQUIRE_DAIRY_SIGNAL and not _contains_dairy_signal(text_norm):
+        return False, "no_dairy_signal"
+
+    if not successful_responses:
+        return True, "no_successful_specialist_response"
+
+    if not GENERAL_INDEX_FALLBACK_ONLY_ON_WEAK:
+        return True, "enabled_always"
+
+    weak = _has_weak_or_conflicting_evidence(successful_responses)
+    if weak:
+        return True, "weak_or_conflicting_specialist_evidence"
+    return False, "specialist_evidence_sufficient"
+
+
+def _render_general_fallback_evidence(results: List[Dict[str, Any]], top_n: int = 4) -> str:
+    snippets: List[str] = []
+    for item in (results or [])[: max(1, top_n)]:
+        metadata = item.get("metadata") or {}
+        source_table = str(metadata.get("source_table", "")).strip() or "base_geral_unificada"
+        content = str(item.get("content", "")).strip()
+        if not content:
+            continue
+        content = re.sub(r"\s+", " ", content)
+        if len(content) > 520:
+            content = content[:520].rstrip() + "..."
+        snippets.append(f"[{source_table}] {content}")
+    return "\n".join(snippets).strip()
+
+
+async def _fetch_general_index_fallback_evidence(
+    state: "OrchestratorState",
+) -> Tuple[str, str]:
+    """Busca evidências em índice geral unificado.
+
+    Retorna (evidence_text, reason). evidence_text vazio indica sem evidência útil.
+    """
+    user_text = _strip_profile_suffix(_get_last_user_text(state.get("messages", [])))
+    tables = _collect_general_fallback_tables(state)
+    if not user_text or not tables:
+        return "", "general_index_no_query_or_tables"
+
+    try:
+        rows = await asyncio.to_thread(
+            search_general_knowledge_base,
+            user_text,
+            tables,
+            GENERAL_INDEX_FALLBACK_SEARCH_TYPE,
+            max(1, int(GENERAL_INDEX_FALLBACK_PER_TABLE_K)),
+            max(1, int(GENERAL_INDEX_FALLBACK_FINAL_K)),
+            MATCH_THRESHOLD,
+        )
+    except Exception:
+        return "", "general_index_search_error"
+
+    min_results = max(1, int(GENERAL_INDEX_FALLBACK_MIN_RESULTS))
+    if len(rows) < min_results:
+        return "", "general_index_insufficient_results"
+
+    evidence = _render_general_fallback_evidence(rows, top_n=min(6, len(rows)))
+    if not evidence:
+        return "", "general_index_empty_evidence"
+    return evidence, "general_index_evidence_collected"
+
+
+def _append_reason(reason: str, marker: str) -> str:
+    base = (reason or "").strip()
+    mark = (marker or "").strip()
+    if not mark:
+        return base
+    return f"{base} | {mark}" if base else mark
+
+
+def _should_use_web_fallback(
+    state: "OrchestratorState",
+    successful_responses: List[Dict[str, Any]],
+    general_used: bool,
+) -> Tuple[bool, str]:
+    if not ENABLE_WEB_FALLBACK:
+        return False, "web_fallback_disabled"
+
+    if WEB_FALLBACK_PROVIDER != "duckduckgo":
+        return False, "web_provider_not_supported"
+
+    user_text = _strip_profile_suffix(_get_last_user_text(state.get("messages", [])))
+    text_norm = _normalize_text(user_text)
+    if not text_norm:
+        return False, "web_empty_query"
+
+    if WEB_FALLBACK_REQUIRE_DAIRY_SIGNAL and not _contains_dairy_signal(text_norm):
+        return False, "web_no_dairy_signal"
+
+    if WEB_FALLBACK_REQUIRE_GENERAL_FALLBACK_FIRST and not general_used:
+        return False, "web_requires_general_fallback_first"
+
+    if not successful_responses:
+        return True, "web_no_specialist_evidence"
+
+    if WEB_FALLBACK_ONLY_ON_WEAK and not _has_weak_or_conflicting_evidence(successful_responses):
+        return False, "web_specialist_evidence_sufficient"
+
+    return True, "web_weak_or_conflicting_evidence"
+
+
+async def _fetch_web_fallback_evidence(
+    state: "OrchestratorState",
+) -> Tuple[str, List[Dict[str, str]], str]:
+    user_text = _strip_profile_suffix(_get_last_user_text(state.get("messages", [])))
+    if not user_text:
+        return "", [], "web_no_query"
+
+    try:
+        rows = await asyncio.to_thread(
+            search_web_duckduckgo,
+            user_text,
+            WEB_FALLBACK_ALLOWED_DOMAINS,
+            max(1, int(WEB_FALLBACK_MAX_RESULTS)),
+            float(WEB_FALLBACK_TIMEOUT_SEC),
+            max(120, int(WEB_FALLBACK_MAX_SNIPPET_CHARS)),
+        )
+    except Exception:
+        return "", [], "web_search_error"
+
+    if not rows:
+        return "", [], "web_no_whitelisted_results"
+
+    if WEB_FALLBACK_FETCH_FULLTEXT:
+        try:
+            rows = await asyncio.to_thread(
+                enrich_results_with_page_content,
+                rows,
+                float(WEB_FALLBACK_TIMEOUT_SEC),
+                max(600, int(WEB_FALLBACK_MAX_PAGE_CHARS)),
+            )
+        except Exception:
+            # Mantém snippets mesmo se enriquecimento falhar.
+            pass
+
+    evidence_text, sources = build_web_fallback_evidence(
+        rows,
+        max_sources=max(1, int(WEB_FALLBACK_MAX_SOURCES)),
+    )
+    if not evidence_text or not sources:
+        return "", [], "web_insufficient_evidence"
+    return evidence_text, sources, "web_evidence_collected"
+
+
+def _render_web_sources_block(sources: List[Dict[str, str]]) -> str:
+    rows: List[str] = []
+    for item in sources or []:
+        title = str(item.get("title", "")).strip() or "Fonte"
+        domain = str(item.get("domain", "")).strip()
+        url = str(item.get("url", "")).strip()
+        if not url:
+            continue
+        label = f"{title} ({domain})" if domain else title
+        rows.append(f"- {label}: {url}")
+    if not rows:
+        return ""
+    return "Fontes externas consultadas:\n" + "\n".join(rows)
 
 
 # ============================================================
@@ -719,6 +1892,9 @@ class OrchestratorState(TypedDict, total=False):
     fallback_attempts: int
     fallback_trigger: str
     previous_agent_responses: List[Dict[str, Any]]
+    general_index_fallback_used: bool
+    web_fallback_used: bool
+    web_fallback_sources: List[Dict[str, str]]
 
 
 # ============================================================
@@ -754,7 +1930,8 @@ def _get_classifier():
     global _classifier_model
     if _classifier_model is None:
         _classifier_model = ChatOpenAI(model=LLM_MODEL, temperature=CLASSIFIER_TEMPERATURE).with_structured_output(
-            ClassificationResult
+            ClassificationResult,
+            method="function_calling",
         )
     return _classifier_model
 
@@ -791,7 +1968,7 @@ def _build_classification_state(
     reason: str = "",
     alternatives: Optional[List[int]] = None,
 ) -> OrchestratorState:
-    confidence = _clamp_confidence(confidence)
+    confidence = _recalibrate_confidence(route_text, agent_ids, confidence)
     bucket = _confidence_to_bucket(confidence)
     alternatives_ids = _sanitize_agent_ids(alternatives or [])
 
@@ -812,6 +1989,9 @@ def _build_classification_state(
             "fallback_attempts": 0,
             "fallback_trigger": "",
             "previous_agent_responses": [],
+            "general_index_fallback_used": False,
+            "web_fallback_used": False,
+            "web_fallback_sources": [],
         }
 
     sanitized_ids = _sanitize_agent_ids(agent_ids)
@@ -827,7 +2007,7 @@ def _build_classification_state(
         cfg = get_agent_by_id(aid)
         agent_names.append(cfg["name"] if cfg else f"Agente {aid}")
 
-    primary_agent_id = _choose_primary_agent_id(execution_plan or sanitized_ids)
+    primary_agent_id = _choose_primary_agent_id(execution_plan or sanitized_ids, route_text=route_text)
     primary_cfg = get_agent_by_id(primary_agent_id)
     primary_agent_name = (
         primary_cfg["name"]
@@ -854,6 +2034,9 @@ def _build_classification_state(
         "fallback_attempts": 0,
         "fallback_trigger": "",
         "previous_agent_responses": [],
+        "general_index_fallback_used": False,
+        "web_fallback_used": False,
+        "web_fallback_sources": [],
     }
 
 
@@ -916,10 +2099,27 @@ ESPECIALISTAS (adicione apenas se a pergunta for claramente desse domínio):
  - Pergunta com mÃºltiplas especialidades â†’ [0, 3, X, Y] (mÃ¡x 5 IDs)
  - Ordene por relevância: o agente mais relevante primeiro.
  
- ALÃ‰M DOS IDs, informe:
- - confidence: nÃºmero entre 0.0 e 1.0
- - reason: justificativa curta
- - alternatives: IDs alternativos relevantes (sem repetir os principais)
+ALÃ‰M DOS IDs, informe:
+- confidence: nÃºmero entre 0.0 e 1.0
+- reason: justificativa curta
+- alternatives: IDs alternativos relevantes (sem repetir os principais)
+
+REGRAS DE DESEMPATE (OBRIGATÃ“RIAS):
+- Se a pergunta for de glossÃ¡rio, padronizaÃ§Ã£o de termos, "qual termo usar" ou "significado esperado",
+  priorize [0,3] e NÃƒO escolha especialista como primÃ¡rio.
+- Se a pergunta envolver rotulagem/denominaÃ§Ã£o/embalagem de produto lÃ¡cteo,
+  priorize [0,3] (regulatÃ³rio), mesmo que cite nome de queijo.
+- Se a pergunta mencionar "norma", "regulamento", "IN", "RDC", "decreto" ou "artigo",
+  priorize [0,3] e evite priorizar formulaÃ§Ã£o (6) como agente principal.
+- Se a pergunta for de mÃ©todo analÃ­tico/laboratorial (Dornic, titulacao, HCl, NaOH, IN 68, centrifugaÃ§Ã£o etc.),
+  inclua 4 e priorize 4 como especialista.
+- Se a pergunta citar fermentaÃ§Ã£o em queijo/coalhada de processo (corte de coalhada, pH de corte),
+  priorize 1 (queijos) e nÃ£o 2.
+- Se a pergunta for de padronizaÃ§Ã£o de termo/glossÃ¡rio ("qual termo usar", "significado esperado"),
+  priorize [0,3] e evite especialistas como primÃ¡rios.
+- Evite super-especializar perguntas institucionais ou terminolÃ³gicas.
+
+ {_CLASSIFIER_FEW_SHOTS}
  """
 
     classifier = _get_classifier()
@@ -937,6 +2137,7 @@ ESPECIALISTAS (adicione apenas se a pergunta for claramente desse domínio):
     # Hard constraints para sinais claros de dominio lacteo.
     agent_ids = _apply_dairy_hard_constraints(route_text, agent_ids)
     alternatives = [aid for aid in alternatives if aid not in agent_ids]
+    agent_ids, alternatives = _apply_domain_guardrails(route_text, agent_ids, alternatives)
 
     if not agent_ids:
         return _build_classification_state(
@@ -1051,7 +2252,7 @@ async def execute(state: OrchestratorState) -> OrchestratorState:
 
     successful_ids = [r["agent_id"] for r in responses if r.get("success")]
     candidate_ids = successful_ids or agent_ids
-    primary_agent_id = _choose_primary_agent_id(candidate_ids)
+    primary_agent_id = _choose_primary_agent_id(candidate_ids, route_text=user_text)
     primary_cfg = get_agent_by_id(primary_agent_id)
     primary_agent_name = (
         primary_cfg["name"] if primary_cfg else "Assistente Geral"
@@ -1175,23 +2376,89 @@ async def consolidate(state: OrchestratorState) -> OrchestratorState:
         r for r in state.get("agent_responses", [])
         if r.get("success") and r.get("response")
     ]
+    user_text = _get_last_user_text(state.get("messages", []))
+
+    # Fallback final em base geral unificada (controlado por flag).
+    # Só entra quando a evidência dos especialistas está ausente/fraca.
+    general_should_use, general_trigger = _should_use_general_index_fallback(state, successful)
+    general_evidence_text = ""
+    general_used = False
+    if general_should_use:
+        general_evidence_text, evidence_status = await _fetch_general_index_fallback_evidence(state)
+        if general_evidence_text:
+            general_used = True
+            general_trigger = _append_reason(general_trigger, evidence_status)
+
+    # Última camada: web fallback com whitelist de domínios confiáveis.
+    web_should_use, web_trigger = _should_use_web_fallback(state, successful, general_used)
+    web_evidence_text = ""
+    web_sources: List[Dict[str, str]] = []
+    web_used = False
+    if web_should_use:
+        web_evidence_text, web_sources, web_status = await _fetch_web_fallback_evidence(state)
+        if web_evidence_text and web_sources:
+            web_used = True
+            web_trigger = _append_reason(web_trigger, web_status)
 
     if not successful:
+        if general_used or web_used:
+            evidence_blocks = []
+            if general_used and general_evidence_text:
+                evidence_blocks.append(f"BASE GERAL UNIFICADA:\n{general_evidence_text}")
+            if web_used and web_evidence_text:
+                evidence_blocks.append(f"WEB (DOMÍNIOS CONFIÁVEIS):\n{web_evidence_text}")
+            evidence_blob = "\n\n".join(evidence_blocks).strip()
+            prompt = (
+                "Você é o assistente geral do DairyApp AI. "
+                "Responda à pergunta do usuário com base SOMENTE nas evidências abaixo. "
+                "Se a evidência não for suficiente para afirmar algo com segurança, diga isso explicitamente.\n\n"
+                f"PERGUNTA: {user_text}\n\n"
+                f"EVIDÊNCIAS:\n{evidence_blob}\n\n"
+                "Resposta:"
+            )
+            try:
+                response = await _get_consolidation_model().ainvoke([HumanMessage(content=prompt)])
+                final_text = _postprocess_consolidated_answer(user_text, response.content or "")
+            except Exception:
+                final_text = _postprocess_consolidated_answer(
+                    user_text,
+                    "A base geral unificada trouxe evidências, mas não foi possível consolidar uma resposta confiável no momento.",
+                )
+            sources_block = _render_web_sources_block(web_sources) if web_used else ""
+            if sources_block:
+                final_text = (final_text.strip() + "\n\n" + sources_block).strip()
+            fallback_marker = []
+            if general_used:
+                fallback_marker.append(f"general_index_fallback:{general_trigger}")
+            if web_used:
+                fallback_marker.append(f"web_fallback:{web_trigger}")
+            return {
+                "final_response": final_text,
+                "messages": [AIMessage(content=final_text)],
+                "general_index_fallback_used": general_used,
+                "web_fallback_used": web_used,
+                "web_fallback_sources": web_sources if web_used else [],
+                "fallback_used": True,
+                "fallback_trigger": " | ".join(fallback_marker),
+                "routing_reason": _append_reason(
+                    str(state.get("routing_reason", "")),
+                    "web_fallback_used" if web_used else "general_index_fallback_used",
+                ),
+            }
+
         final_text = (
             "Não foi possível obter uma resposta no momento. "
             "Por favor, tente reformular sua pergunta."
         )
-        user_text = _get_last_user_text(state.get("messages", []))
         final_text = _postprocess_consolidated_answer(user_text, final_text)
         return {
             "final_response": final_text,
             "messages": [AIMessage(content=final_text)],
         }
 
-    # 1 agente: repassa direto (econômico)
-    if len(successful) == 1:
+    # 1 agente: repassa direto (econômico), exceto se fallback geral foi acionado.
+    if len(successful) == 1 and not general_used:
         single_fact = _extract_factual_candidate(str(successful[0]["response"]))
-        user_text = _get_last_user_text(state.get("messages", []))
         final_text = _postprocess_consolidated_answer(
             user_text,
             single_fact or successful[0]["response"],
@@ -1201,12 +2468,11 @@ async def consolidate(state: OrchestratorState) -> OrchestratorState:
             "messages": [AIMessage(content=final_text)],
         }
 
-    # 2+ agentes: consolida com LLM
-    user_text = _get_last_user_text(state.get("messages", []))
+    # 2+ agentes (ou 1 + fallback geral): consolida com LLM.
 
     # Em perguntas objetivas, quando houver um único especialista com
     # resposta factual direta, devolve essa resposta sem adicionar ressalvas.
-    preferred = _prefer_direct_fact_response(user_text, successful)
+    preferred = _prefer_direct_fact_response(user_text, successful) if not general_used else None
     if preferred:
         preferred = _postprocess_consolidated_answer(user_text, preferred)
         return {
@@ -1230,6 +2496,16 @@ async def consolidate(state: OrchestratorState) -> OrchestratorState:
         f"\n--- {r['agent_name']} ---\n{r['response']}\n"
         for r in successful
     )
+    if general_used and general_evidence_text:
+        responses_text += (
+            f"\n--- Base Geral Unificada (fallback) ---\n"
+            f"{general_evidence_text}\n"
+        )
+    if web_used and web_evidence_text:
+        responses_text += (
+            f"\n--- Web (fallback em domínios confiáveis) ---\n"
+            f"{web_evidence_text}\n"
+        )
 
     consolidation_prompt = (
         "Você é o assistente geral do DairyApp AI. Recebeu respostas de múltiplos "
@@ -1241,6 +2517,7 @@ async def consolidate(state: OrchestratorState) -> OrchestratorState:
         "- Se houver lacuna de evidência, diga explicitamente que a base atual não trouxe informação suficiente\n"
         "- Evite misturar produtos/rotinas diferentes sem indicar a diferença\n"
         "- Não mencionar que consultou múltiplos agentes internos\n"
+        "- Se houver evidência web, trate como fonte externa e preserve rastreabilidade\n"
         "- Tom técnico e profissional em português brasileiro\n\n"
         f"PERGUNTA: {user_text}\n\n"
         f"RESPOSTAS DOS ESPECIALISTAS:{responses_text}\n"
@@ -1258,10 +2535,33 @@ async def consolidate(state: OrchestratorState) -> OrchestratorState:
             "\n\n".join(r["response"] for r in successful),
         )
 
-    return {
+    payload: OrchestratorState = {
         "final_response": final_text,
         "messages": [AIMessage(content=final_text)],
     }
+    if general_used or web_used:
+        sources_block = _render_web_sources_block(web_sources) if web_used else ""
+        if sources_block:
+            final_text = (final_text.strip() + "\n\n" + sources_block).strip()
+        payload["general_index_fallback_used"] = general_used
+        payload["web_fallback_used"] = web_used
+        payload["web_fallback_sources"] = web_sources if web_used else []
+        marker = []
+        if general_used:
+            marker.append(f"general_index_fallback:{general_trigger}")
+        if web_used:
+            marker.append(f"web_fallback:{web_trigger}")
+        payload.update(
+            {
+                "fallback_used": True,
+                "fallback_trigger": " | ".join(marker),
+                "routing_reason": _append_reason(
+                    str(state.get("routing_reason", "")),
+                    "web_fallback_used" if web_used else "general_index_fallback_used",
+                ),
+            }
+        )
+    return payload
 
 
 # ============================================================

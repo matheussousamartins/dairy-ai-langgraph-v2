@@ -1,0 +1,743 @@
+generated_at_utc: '2026-04-23T13:16:23Z'
+source_dataset: tests/fixtures/rag/rag_queries.yaml
+methodology:
+  notes:
+  - Hints derivados das perguntas reais do rag_queries.
+  - Quando necessário, o corpus markdown por agente complementa cobertura por documento.
+  - Score combina precisão por agente, cobertura e dispersão por grupos/docs.
+  - Termos genéricos foram excluídos para aumentar assertividade.
+  strong_criteria:
+    min_support: '>=4 no score combinado (query x2 + docs x1)'
+    min_group_spread: 2 (ou 1 quando agente tem apenas 1 grupo no dataset)
+    min_precision: 0.8
+  medium_criteria:
+    min_support: 2
+    min_precision: 0.65
+specialists:
+  '1':
+    strong_hints_normalized:
+    - biotec jan
+    - biotec jan mar
+    - parte defeitos comuns
+    - comuns queijos parte
+    - parte defeitos
+    - edicao parte
+    - queijos parte biotec
+    - biotec jul set
+    - defeitos comuns queijos
+    - defeitos comuns
+    - edicao parte defeitos
+    - queijos parte
+    - parte biotec
+    - comuns queijos
+    - defeitos
+    - biotec jul
+    - edicao cottage
+    - explorando rentabilidade
+    - queijos biotec
+    - ingredientes naturais
+    - explorando
+    - duros heranca
+    - pizza cheese biotec
+    - simples ingredientes
+    - sabor cultivos
+    - vale sabor cultivos
+    - queijos prensados biotec
+    - prensados
+    - edicao explorando
+    - produtividade queijos prensados
+    - cultivo transforma
+    - edicao browning
+    - edicao browning pizza
+    - cheese biotec
+    - queijos duros
+    - heranca italiana
+    - adjuntos queijos
+    - rentabilidade producao queijos
+    - tecnologia browning
+    - cultivos
+    - adjuntos queijos maturados
+    - prensados biotec
+    - edicao inovacao
+    - inovacao
+    - transforma relacao rendimento
+    medium_hints_normalized: []
+    diagnostics:
+    - term: biotec jan
+      support: 3
+      global_support: 3
+      groups: 3
+      precision: 1.0
+      coverage: 0.375
+      score: 5.4613
+    - term: biotec jan mar
+      support: 3
+      global_support: 3
+      groups: 3
+      precision: 1.0
+      coverage: 0.375
+      score: 5.4613
+    - term: parte defeitos comuns
+      support: 2
+      global_support: 2
+      groups: 2
+      precision: 1.0
+      coverage: 0.25
+      score: 3.7853
+    - term: comuns queijos parte
+      support: 2
+      global_support: 2
+      groups: 2
+      precision: 1.0
+      coverage: 0.25
+      score: 3.7853
+    - term: parte defeitos
+      support: 2
+      global_support: 2
+      groups: 2
+      precision: 1.0
+      coverage: 0.25
+      score: 3.7853
+    - term: edicao parte
+      support: 2
+      global_support: 2
+      groups: 2
+      precision: 1.0
+      coverage: 0.25
+      score: 3.7853
+    - term: queijos parte biotec
+      support: 2
+      global_support: 2
+      groups: 2
+      precision: 1.0
+      coverage: 0.25
+      score: 3.7853
+    - term: biotec jul set
+      support: 2
+      global_support: 2
+      groups: 2
+      precision: 1.0
+      coverage: 0.25
+      score: 3.7853
+    - term: defeitos comuns queijos
+      support: 2
+      global_support: 2
+      groups: 2
+      precision: 1.0
+      coverage: 0.25
+      score: 3.7853
+    - term: defeitos comuns
+      support: 2
+      global_support: 2
+      groups: 2
+      precision: 1.0
+      coverage: 0.25
+      score: 3.7853
+    - term: edicao parte defeitos
+      support: 2
+      global_support: 2
+      groups: 2
+      precision: 1.0
+      coverage: 0.25
+      score: 3.7853
+    - term: queijos parte
+      support: 2
+      global_support: 2
+      groups: 2
+      precision: 1.0
+      coverage: 0.25
+      score: 3.7853
+    - term: parte biotec
+      support: 2
+      global_support: 2
+      groups: 2
+      precision: 1.0
+      coverage: 0.25
+      score: 3.7853
+    - term: comuns queijos
+      support: 2
+      global_support: 2
+      groups: 2
+      precision: 1.0
+      coverage: 0.25
+      score: 3.7853
+    - term: defeitos
+      support: 2
+      global_support: 2
+      groups: 2
+      precision: 1.0
+      coverage: 0.25
+      score: 3.7853
+    - term: biotec jul
+      support: 2
+      global_support: 2
+      groups: 2
+      precision: 1.0
+      coverage: 0.25
+      score: 3.7853
+    - term: edicao cottage
+      support: 1
+      global_support: 1
+      groups: 1
+      precision: 1.0
+      coverage: 0.125
+      score: 2.1785
+    - term: explorando rentabilidade
+      support: 1
+      global_support: 1
+      groups: 1
+      precision: 1.0
+      coverage: 0.125
+      score: 2.1785
+    - term: queijos biotec
+      support: 1
+      global_support: 1
+      groups: 1
+      precision: 1.0
+      coverage: 0.125
+      score: 2.1785
+    - term: ingredientes naturais
+      support: 1
+      global_support: 1
+      groups: 1
+      precision: 1.0
+      coverage: 0.125
+      score: 2.1785
+    - term: explorando
+      support: 1
+      global_support: 1
+      groups: 1
+      precision: 1.0
+      coverage: 0.125
+      score: 2.1785
+    - term: duros heranca
+      support: 1
+      global_support: 1
+      groups: 1
+      precision: 1.0
+      coverage: 0.125
+      score: 2.1785
+    - term: pizza cheese biotec
+      support: 1
+      global_support: 1
+      groups: 1
+      precision: 1.0
+      coverage: 0.125
+      score: 2.1785
+    - term: simples ingredientes
+      support: 1
+      global_support: 1
+      groups: 1
+      precision: 1.0
+      coverage: 0.125
+      score: 2.1785
+    - term: sabor cultivos
+      support: 1
+      global_support: 1
+      groups: 1
+      precision: 1.0
+      coverage: 0.125
+      score: 2.1785
+  '2':
+    strong_hints_normalized:
+    - fermentados
+    - leites fermentados
+    - edicao produtos lacteos
+    - pos acidificacao iogurtes
+    - fermentados base
+    - nslab impactos qualidade
+    - biociencia
+    - ferm base vegetal
+    - popular todo mundo
+    - produtos fermentados base
+    - reinvencao
+    - edicao nslab
+    - base vegetal quem
+    - ferm base
+    - edicao prod ferm
+    - edicao pos
+    - novas alternativas
+    - alternativas
+    - impactos qualidade iogurte
+    - edicao prod
+    - impactos
+    - edicao kefir
+    - vegetal quem precisa
+    - quem precisa prefere
+    - frescos biociencia biossolucoes
+    - prod ferm base
+    - pos acidificacao
+    - edicao nslab impactos
+    - acidificacao iogurtes
+    - edicao pos acidificacao
+    - base vegetal
+    - informativo trimestral industria
+    - iogurtes
+    - frescos biociencia
+    - islandes popular todo
+    - trimestral industria lactea
+    - prefere novas
+    - islandes
+    - biossolucoes
+    - produtos lacteos frescos
+    - fermentado islandes
+    - popular todo
+    - trimestral industria
+    - islandes popular
+    - skyr fermentado
+    medium_hints_normalized: []
+    diagnostics:
+    - term: fermentados
+      support: 3
+      global_support: 3
+      groups: 3
+      precision: 1.0
+      coverage: 0.4286
+      score: 5.3867
+    - term: leites fermentados
+      support: 2
+      global_support: 2
+      groups: 2
+      precision: 1.0
+      coverage: 0.2857
+      score: 3.7229
+    - term: edicao produtos lacteos
+      support: 1
+      global_support: 1
+      groups: 1
+      precision: 1.0
+      coverage: 0.1429
+      score: 2.1272
+    - term: pos acidificacao iogurtes
+      support: 1
+      global_support: 1
+      groups: 1
+      precision: 1.0
+      coverage: 0.1429
+      score: 2.1272
+    - term: fermentados base
+      support: 1
+      global_support: 1
+      groups: 1
+      precision: 1.0
+      coverage: 0.1429
+      score: 2.1272
+    - term: nslab impactos qualidade
+      support: 1
+      global_support: 1
+      groups: 1
+      precision: 1.0
+      coverage: 0.1429
+      score: 2.1272
+    - term: biociencia
+      support: 1
+      global_support: 1
+      groups: 1
+      precision: 1.0
+      coverage: 0.1429
+      score: 2.1272
+    - term: ferm base vegetal
+      support: 1
+      global_support: 1
+      groups: 1
+      precision: 1.0
+      coverage: 0.1429
+      score: 2.1272
+    - term: popular todo mundo
+      support: 1
+      global_support: 1
+      groups: 1
+      precision: 1.0
+      coverage: 0.1429
+      score: 2.1272
+    - term: produtos fermentados base
+      support: 1
+      global_support: 1
+      groups: 1
+      precision: 1.0
+      coverage: 0.1429
+      score: 2.1272
+    - term: reinvencao
+      support: 1
+      global_support: 1
+      groups: 1
+      precision: 1.0
+      coverage: 0.1429
+      score: 2.1272
+    - term: edicao nslab
+      support: 1
+      global_support: 1
+      groups: 1
+      precision: 1.0
+      coverage: 0.1429
+      score: 2.1272
+    - term: base vegetal quem
+      support: 1
+      global_support: 1
+      groups: 1
+      precision: 1.0
+      coverage: 0.1429
+      score: 2.1272
+    - term: ferm base
+      support: 1
+      global_support: 1
+      groups: 1
+      precision: 1.0
+      coverage: 0.1429
+      score: 2.1272
+    - term: edicao prod ferm
+      support: 1
+      global_support: 1
+      groups: 1
+      precision: 1.0
+      coverage: 0.1429
+      score: 2.1272
+    - term: edicao pos
+      support: 1
+      global_support: 1
+      groups: 1
+      precision: 1.0
+      coverage: 0.1429
+      score: 2.1272
+    - term: novas alternativas
+      support: 1
+      global_support: 1
+      groups: 1
+      precision: 1.0
+      coverage: 0.1429
+      score: 2.1272
+    - term: alternativas
+      support: 1
+      global_support: 1
+      groups: 1
+      precision: 1.0
+      coverage: 0.1429
+      score: 2.1272
+    - term: impactos qualidade iogurte
+      support: 1
+      global_support: 1
+      groups: 1
+      precision: 1.0
+      coverage: 0.1429
+      score: 2.1272
+    - term: edicao prod
+      support: 1
+      global_support: 1
+      groups: 1
+      precision: 1.0
+      coverage: 0.1429
+      score: 2.1272
+    - term: impactos
+      support: 1
+      global_support: 1
+      groups: 1
+      precision: 1.0
+      coverage: 0.1429
+      score: 2.1272
+    - term: edicao kefir
+      support: 1
+      global_support: 1
+      groups: 1
+      precision: 1.0
+      coverage: 0.1429
+      score: 2.1272
+    - term: vegetal quem precisa
+      support: 1
+      global_support: 1
+      groups: 1
+      precision: 1.0
+      coverage: 0.1429
+      score: 2.1272
+    - term: quem precisa prefere
+      support: 1
+      global_support: 1
+      groups: 1
+      precision: 1.0
+      coverage: 0.1429
+      score: 2.1272
+    - term: frescos biociencia biossolucoes
+      support: 1
+      global_support: 1
+      groups: 1
+      precision: 1.0
+      coverage: 0.1429
+      score: 2.1272
+  '4':
+    strong_hints_normalized:
+    - leite cru
+    - composicao
+    - caracteristicas
+    - controle
+    medium_hints_normalized:
+    - ordenha
+    - temperatura
+    - constituintes
+    - horas
+    - fabricacao
+    - bacterias
+    - periodo
+    - proteinas
+    - animal
+    - psicrotroficos
+    - solucoes
+    - acido
+    - sensoriais
+    - caracteristicas sensoriais
+    - fisico
+    - limite cpp
+    - posto
+    - solidos
+    - somatorio todos constituintes
+    - somaticas
+    - maximo cpp ufc
+    - fabricacao queijos
+    - solidos leite
+    - somaticas leite
+    - adicao agua soro
+    - superior
+    - granelizacao
+    - reduzir azul metileno
+    - redutase
+    - celulas somaticas
+    - limite maximo ccs
+    - alterar
+    - leite resfriado
+    - citadas
+    - rendimento fabricacao
+    - todos constituintes solidos
+    - cpp partir
+    - tanque
+    - constituintes solidos
+    - seco
+    - ccs partir
+    - limite maximo cpp
+    - azul metileno
+    - nao superior
+    - proteinas leite
+    - celulas somaticas leite
+    - texto
+    - temperatura maxima
+    - higiene
+    - agua
+    - estabelecimento
+    - teste
+    - caseinas
+    - atingir
+    - composicao leite
+    - somatorio
+    - maximo ufc
+    - reduzir azul
+    - condicoes
+    - media
+    diagnostics:
+    - term: leite cru
+      support: 7
+      global_support: 7
+      groups: 2
+      precision: 1.0
+      coverage: 0.0886
+      score: 10.2332
+    - term: composicao
+      support: 7
+      global_support: 7
+      groups: 2
+      precision: 1.0
+      coverage: 0.0886
+      score: 10.2332
+    - term: caracteristicas
+      support: 4
+      global_support: 4
+      groups: 3
+      precision: 1.0
+      coverage: 0.0506
+      score: 9.0226
+    - term: controle
+      support: 5
+      global_support: 5
+      groups: 2
+      precision: 1.0
+      coverage: 0.0633
+      score: 8.7567
+    - term: ordenha
+      support: 10
+      global_support: 10
+      groups: 1
+      precision: 1.0
+      coverage: 0.1266
+      score: 10.3582
+    - term: temperatura
+      support: 8
+      global_support: 8
+      groups: 1
+      precision: 1.0
+      coverage: 0.1013
+      score: 9.3326
+    - term: constituintes
+      support: 8
+      global_support: 8
+      groups: 1
+      precision: 1.0
+      coverage: 0.1013
+      score: 9.3326
+    - term: horas
+      support: 8
+      global_support: 8
+      groups: 1
+      precision: 1.0
+      coverage: 0.1013
+      score: 9.3326
+    - term: fabricacao
+      support: 6
+      global_support: 6
+      groups: 1
+      precision: 1.0
+      coverage: 0.0759
+      score: 8.1668
+    - term: bacterias
+      support: 6
+      global_support: 6
+      groups: 1
+      precision: 1.0
+      coverage: 0.0759
+      score: 8.1668
+    - term: periodo
+      support: 6
+      global_support: 6
+      groups: 1
+      precision: 1.0
+      coverage: 0.0759
+      score: 8.1668
+    - term: proteinas
+      support: 6
+      global_support: 6
+      groups: 1
+      precision: 1.0
+      coverage: 0.0759
+      score: 8.1668
+    - term: animal
+      support: 6
+      global_support: 6
+      groups: 1
+      precision: 1.0
+      coverage: 0.0759
+      score: 8.1668
+    - term: psicrotroficos
+      support: 6
+      global_support: 6
+      groups: 1
+      precision: 1.0
+      coverage: 0.0759
+      score: 8.1668
+    - term: solucoes
+      support: 3
+      global_support: 3
+      groups: 3
+      precision: 1.0
+      coverage: 0.038
+      score: 7.8848
+    - term: acido
+      support: 3
+      global_support: 3
+      groups: 2
+      precision: 1.0
+      coverage: 0.038
+      score: 6.8992
+    - term: sensoriais
+      support: 3
+      global_support: 3
+      groups: 2
+      precision: 1.0
+      coverage: 0.038
+      score: 6.8992
+    - term: caracteristicas sensoriais
+      support: 3
+      global_support: 3
+      groups: 2
+      precision: 1.0
+      coverage: 0.038
+      score: 6.8992
+    - term: fisico
+      support: 3
+      global_support: 3
+      groups: 2
+      precision: 1.0
+      coverage: 0.038
+      score: 6.8992
+    - term: limite cpp
+      support: 4
+      global_support: 4
+      groups: 1
+      precision: 1.0
+      coverage: 0.0506
+      score: 6.7669
+    - term: posto
+      support: 4
+      global_support: 4
+      groups: 1
+      precision: 1.0
+      coverage: 0.0506
+      score: 6.7669
+    - term: solidos
+      support: 4
+      global_support: 4
+      groups: 1
+      precision: 1.0
+      coverage: 0.0506
+      score: 6.7669
+    - term: somatorio todos constituintes
+      support: 4
+      global_support: 4
+      groups: 1
+      precision: 1.0
+      coverage: 0.0506
+      score: 6.7669
+    - term: somaticas
+      support: 4
+      global_support: 4
+      groups: 1
+      precision: 1.0
+      coverage: 0.0506
+      score: 6.7669
+    - term: maximo cpp ufc
+      support: 4
+      global_support: 4
+      groups: 1
+      precision: 1.0
+      coverage: 0.0506
+      score: 6.7669
+    - term: fabricacao queijos
+      support: 4
+      global_support: 4
+      groups: 1
+      precision: 1.0
+      coverage: 0.0506
+      score: 6.7669
+    - term: solidos leite
+      support: 4
+      global_support: 4
+      groups: 1
+      precision: 1.0
+      coverage: 0.0506
+      score: 6.7669
+    - term: somaticas leite
+      support: 4
+      global_support: 4
+      groups: 1
+      precision: 1.0
+      coverage: 0.0506
+      score: 6.7669
+    - term: adicao agua soro
+      support: 4
+      global_support: 4
+      groups: 1
+      precision: 1.0
+      coverage: 0.0506
+      score: 6.7669
+  '5':
+    strong_hints_normalized: []
+    medium_hints_normalized: []
+    diagnostics: []
+  '6':
+    strong_hints_normalized: []
+    medium_hints_normalized: []
+    diagnostics: []

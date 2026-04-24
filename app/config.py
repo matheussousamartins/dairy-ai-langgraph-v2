@@ -88,6 +88,24 @@ SUPABASE_DB_URL = os.getenv("SUPABASE_DB_URL", "")
 # Exemplo: postgresql://postgres:senha@5.161.236.220:5432/postgres
 HETZNER_DB_URL = os.getenv("HETZNER_DB_URL", "")
 
+# Pool de conexões (ajustável por ambiente).
+# Defaults conservadores para evitar saturar Session Pooler do Supabase.
+SUPABASE_DB_POOL_MIN_SIZE = int(os.getenv("SUPABASE_DB_POOL_MIN_SIZE", "1"))
+SUPABASE_DB_POOL_MAX_SIZE = int(os.getenv("SUPABASE_DB_POOL_MAX_SIZE", "4"))
+SUPABASE_DB_POOL_TIMEOUT_SEC = float(os.getenv("SUPABASE_DB_POOL_TIMEOUT_SEC", "12"))
+SUPABASE_DB_POOL_RECONNECT_TIMEOUT_SEC = float(
+    os.getenv("SUPABASE_DB_POOL_RECONNECT_TIMEOUT_SEC", "30")
+)
+SUPABASE_DB_CONNECT_TIMEOUT_SEC = int(os.getenv("SUPABASE_DB_CONNECT_TIMEOUT_SEC", "8"))
+
+HETZNER_DB_POOL_MIN_SIZE = int(os.getenv("HETZNER_DB_POOL_MIN_SIZE", "1"))
+HETZNER_DB_POOL_MAX_SIZE = int(os.getenv("HETZNER_DB_POOL_MAX_SIZE", "4"))
+HETZNER_DB_POOL_TIMEOUT_SEC = float(os.getenv("HETZNER_DB_POOL_TIMEOUT_SEC", "12"))
+HETZNER_DB_POOL_RECONNECT_TIMEOUT_SEC = float(
+    os.getenv("HETZNER_DB_POOL_RECONNECT_TIMEOUT_SEC", "30")
+)
+HETZNER_DB_CONNECT_TIMEOUT_SEC = int(os.getenv("HETZNER_DB_CONNECT_TIMEOUT_SEC", "8"))
+
 
 # ============================================================
 # RAG â€” ConfiguraÃ§Ãµes de busca e retrieval
@@ -191,6 +209,43 @@ RAG_SECOND_PASS_MAX_K = int(os.getenv("RAG_SECOND_PASS_MAX_K", "20"))
 RAG_SECOND_PASS_FORCE_HYBRID = os.getenv("RAG_SECOND_PASS_FORCE_HYBRID", "true").strip().lower() == "true"
 RAG_SECOND_PASS_DISABLE_THRESHOLD = os.getenv("RAG_SECOND_PASS_DISABLE_THRESHOLD", "true").strip().lower() == "true"
 RAG_SECOND_PASS_USE_QUERY_REWRITE = os.getenv("RAG_SECOND_PASS_USE_QUERY_REWRITE", "true").strip().lower() == "true"
+
+# Fallback final do orquestrador: busca em base geral unificada (multi-tabela).
+# Deve ficar DESLIGADO por padrão e ser ativado por rollout controlado.
+ENABLE_GENERAL_INDEX_FALLBACK = os.getenv("ENABLE_GENERAL_INDEX_FALLBACK", "false").strip().lower() == "true"
+GENERAL_INDEX_FALLBACK_SEARCH_TYPE = os.getenv("GENERAL_INDEX_FALLBACK_SEARCH_TYPE", "hybrid_rrf").strip().lower()
+GENERAL_INDEX_FALLBACK_PER_TABLE_K = int(os.getenv("GENERAL_INDEX_FALLBACK_PER_TABLE_K", "3"))
+GENERAL_INDEX_FALLBACK_FINAL_K = int(os.getenv("GENERAL_INDEX_FALLBACK_FINAL_K", "6"))
+GENERAL_INDEX_FALLBACK_MIN_RESULTS = int(os.getenv("GENERAL_INDEX_FALLBACK_MIN_RESULTS", "2"))
+GENERAL_INDEX_FALLBACK_MAX_TABLES = int(os.getenv("GENERAL_INDEX_FALLBACK_MAX_TABLES", "7"))
+GENERAL_INDEX_FALLBACK_ONLY_ON_WEAK = os.getenv("GENERAL_INDEX_FALLBACK_ONLY_ON_WEAK", "true").strip().lower() == "true"
+GENERAL_INDEX_FALLBACK_REQUIRE_DAIRY_SIGNAL = os.getenv("GENERAL_INDEX_FALLBACK_REQUIRE_DAIRY_SIGNAL", "true").strip().lower() == "true"
+
+# Fallback final na internet (última camada, com whitelist).
+ENABLE_WEB_FALLBACK = os.getenv("ENABLE_WEB_FALLBACK", "false").strip().lower() == "true"
+WEB_FALLBACK_PROVIDER = os.getenv("WEB_FALLBACK_PROVIDER", "duckduckgo").strip().lower()
+WEB_FALLBACK_TIMEOUT_SEC = float(os.getenv("WEB_FALLBACK_TIMEOUT_SEC", "8"))
+WEB_FALLBACK_MAX_RESULTS = int(os.getenv("WEB_FALLBACK_MAX_RESULTS", "6"))
+WEB_FALLBACK_MAX_SOURCES = int(os.getenv("WEB_FALLBACK_MAX_SOURCES", "3"))
+WEB_FALLBACK_ONLY_ON_WEAK = os.getenv("WEB_FALLBACK_ONLY_ON_WEAK", "true").strip().lower() == "true"
+WEB_FALLBACK_REQUIRE_DAIRY_SIGNAL = os.getenv("WEB_FALLBACK_REQUIRE_DAIRY_SIGNAL", "true").strip().lower() == "true"
+WEB_FALLBACK_REQUIRE_GENERAL_FALLBACK_FIRST = os.getenv(
+    "WEB_FALLBACK_REQUIRE_GENERAL_FALLBACK_FIRST", "true"
+).strip().lower() == "true"
+WEB_FALLBACK_FETCH_FULLTEXT = os.getenv("WEB_FALLBACK_FETCH_FULLTEXT", "false").strip().lower() == "true"
+WEB_FALLBACK_MAX_PAGE_CHARS = int(os.getenv("WEB_FALLBACK_MAX_PAGE_CHARS", "2800"))
+WEB_FALLBACK_MAX_SNIPPET_CHARS = int(os.getenv("WEB_FALLBACK_MAX_SNIPPET_CHARS", "420"))
+WEB_FALLBACK_ALLOWED_DOMAINS = [
+    item.strip().lower()
+    for item in os.getenv(
+        "WEB_FALLBACK_ALLOWED_DOMAINS",
+        (
+            "gov.br,anvisa.gov.br,agricultura.gov.br,in.gov.br,planalto.gov.br,"
+            "fao.org,who.int,codexalimentarius.fao.org,mercosur.int,iso.org"
+        ),
+    ).split(",")
+    if item.strip()
+]
 
 
 # ============================================================

@@ -852,6 +852,92 @@ def search_knowledge_base(
     return _postprocess_results(query, merged, _k)
 
 
+def search_general_knowledge_base(
+    query: str,
+    table_names: List[str],
+    search_type: str = "hybrid_rrf",
+    per_table_k: int = 3,
+    final_k: int = 6,
+    threshold: Optional[float] = None,
+) -> List[Dict[str, Any]]:
+    """Busca unificada em múltiplas tabelas de embeddings.
+
+    Uso recomendado: fallback final do orquestrador quando a rota especialista
+    não trouxe evidência suficiente.
+
+    Guardrails desta função:
+    - Compartilha o mesmo embedding para todas as tabelas (eficiente).
+    - Ignora erros por tabela e continua com as demais (robusto).
+    - Mescla resultados por RRF entre tabelas e aplica pós-processamento.
+    """
+    base_query = (query or "").strip()
+    if not base_query:
+        return []
+
+    clean_tables: List[str] = []
+    seen = set()
+    for raw_name in table_names or []:
+        name = str(raw_name or "").strip()
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        clean_tables.append(name)
+    if not clean_tables:
+        return []
+
+    mode = (search_type or "hybrid_rrf").strip().lower()
+    mode = "hybrid_rrf" if mode in ("hybrid", "hybrid_rrf") else mode
+    if mode not in ("vector", "text", "hybrid_rrf"):
+        mode = "hybrid_rrf"
+
+    limit_per_table = max(1, int(per_table_k or 1))
+    limit_final = max(1, int(final_k or 1))
+    run_threshold = threshold if threshold is not None else MATCH_THRESHOLD
+
+    query_embedding = None
+    if mode != "text":
+        query_embedding = embed_query(base_query)
+
+    result_lists: List[List[Dict[str, Any]]] = []
+    for table_name in clean_tables:
+        try:
+            if mode == "vector":
+                rows = search_vector(query_embedding, table_name, limit_per_table, run_threshold)
+            elif mode == "text":
+                rows = search_text(base_query, table_name, limit_per_table)
+            else:
+                rows = search_hybrid_rrf(
+                    base_query,
+                    query_embedding,
+                    table_name,
+                    limit_per_table,
+                    run_threshold,
+                )
+        except Exception:
+            # Falha de tabela isolada não deve derrubar fallback geral.
+            continue
+
+        enriched: List[Dict[str, Any]] = []
+        for item in rows:
+            metadata = dict(item.get("metadata") or {})
+            metadata.setdefault("source_table", table_name)
+            enriched.append(
+                {
+                    "content": item.get("content", ""),
+                    "score": float(item.get("score", 0.0) or 0.0),
+                    "metadata": metadata,
+                }
+            )
+        if enriched:
+            result_lists.append(enriched)
+
+    if not result_lists:
+        return []
+
+    fused = _fuse_results_rrf(result_lists, max(limit_final * 2, limit_final + 2))
+    return _postprocess_results(base_query, fused, limit_final)
+
+
 # ============================================================
 # Tool LangChain (usada pelos agentes no grafo ReAct)
 # ============================================================

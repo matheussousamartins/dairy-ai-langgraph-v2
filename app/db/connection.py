@@ -36,7 +36,20 @@ from psycopg_pool import ConnectionPool
 from contextlib import contextmanager
 from typing import Generator
 
-from app.config import SUPABASE_DB_URL, HETZNER_DB_URL
+from app.config import (
+    HETZNER_DB_CONNECT_TIMEOUT_SEC,
+    HETZNER_DB_POOL_MAX_SIZE,
+    HETZNER_DB_POOL_MIN_SIZE,
+    HETZNER_DB_POOL_RECONNECT_TIMEOUT_SEC,
+    HETZNER_DB_POOL_TIMEOUT_SEC,
+    HETZNER_DB_URL,
+    SUPABASE_DB_CONNECT_TIMEOUT_SEC,
+    SUPABASE_DB_POOL_MAX_SIZE,
+    SUPABASE_DB_POOL_MIN_SIZE,
+    SUPABASE_DB_POOL_RECONNECT_TIMEOUT_SEC,
+    SUPABASE_DB_POOL_TIMEOUT_SEC,
+    SUPABASE_DB_URL,
+)
 
 
 # ============================================================
@@ -44,20 +57,16 @@ from app.config import SUPABASE_DB_URL, HETZNER_DB_URL
 # ============================================================
 
 # Pool para o SUPABASE (vector store).
-# min_size=2: mantém 2 conexões abertas sempre (para buscas rápidas)
-# max_size=10: permite até 10 conexões simultâneas (pico de uso)
-# Se todos os 10 estiverem em uso, a próxima request espera até
+# min_size / max_size vêm do .env (defaults conservadores).
+# Se todas estiverem em uso, a próxima request espera até
 # uma conexão ser devolvida ao pool (timeout de 30s por padrão).
 #
-# Por que min=2?
-# - 1 conexão para buscas RAG dos agentes
-# - 1 conexão para ingestão de documentos (pode rodar em paralelo)
-# Em uso normal, 2 é suficiente. Sob carga, escala até 10.
+# Em produção com Session Pooler do Supabase, usar max_size baixo
+# evita erro EMAXCONNSESSION.
 _supabase_pool: ConnectionPool | None = None
 
 # Pool para o HETZNER (dados operacionais).
-# min_size=2: mantém 2 conexões abertas sempre
-# max_size=10: permite até 10 conexões simultâneas
+# min_size / max_size vêm do .env (defaults conservadores)
 #
 # Esse pool é usado para:
 # - Salvar/carregar chat_memories (toda request de chat)
@@ -88,13 +97,16 @@ def init_pools() -> None:
     if SUPABASE_DB_URL and _supabase_pool is None:
         _supabase_pool = ConnectionPool(
             conninfo=SUPABASE_DB_URL,  # Connection string completa
-            min_size=2,                 # Conexões mínimas mantidas abertas
-            max_size=10,                # Conexões máximas permitidas
+            min_size=SUPABASE_DB_POOL_MIN_SIZE,
+            max_size=SUPABASE_DB_POOL_MAX_SIZE,
             open=True,                  # Abre as conexões imediatamente
+            timeout=SUPABASE_DB_POOL_TIMEOUT_SEC,
+            reconnect_timeout=SUPABASE_DB_POOL_RECONNECT_TIMEOUT_SEC,
             # kwargs passados para cada conexão individual:
             kwargs={
                 "autocommit": True,     # Cada query é um commit automático
                                         # (não precisamos de transações longas)
+                "connect_timeout": SUPABASE_DB_CONNECT_TIMEOUT_SEC,
                 # TCP keepalives: evita que o Supabase Session Pooler feche
                 # conexões inativas durante ingestões longas (OpenAI pode
                 # levar 30-60s, deixando a conexão idle nesse período).
@@ -109,11 +121,14 @@ def init_pools() -> None:
     if HETZNER_DB_URL and _hetzner_pool is None:
         _hetzner_pool = ConnectionPool(
             conninfo=HETZNER_DB_URL,
-            min_size=2,
-            max_size=10,
+            min_size=HETZNER_DB_POOL_MIN_SIZE,
+            max_size=HETZNER_DB_POOL_MAX_SIZE,
             open=True,
+            timeout=HETZNER_DB_POOL_TIMEOUT_SEC,
+            reconnect_timeout=HETZNER_DB_POOL_RECONNECT_TIMEOUT_SEC,
             kwargs={
                 "autocommit": True,
+                "connect_timeout": HETZNER_DB_CONNECT_TIMEOUT_SEC,
             },
         )
 

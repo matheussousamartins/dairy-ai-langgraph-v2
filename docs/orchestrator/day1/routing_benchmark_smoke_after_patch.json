@@ -1,0 +1,261 @@
+{
+  "total_cases": 10,
+  "measured_cases": 4,
+  "failed_cases": 6,
+  "routing_at_1": 25.0,
+  "routing_at_3": 50.0,
+  "fallback_rate": 75.0,
+  "latency_ms": {
+    "p50": 29889.231950044632,
+    "p95": 32628.256309969584,
+    "p99": 32987.413261962356,
+    "mean": 26892.193600011524
+  },
+  "bucket_distribution": {
+    "medium": 4
+  },
+  "per_expected_agent": {
+    "1": {
+      "n": 1,
+      "routing_at_1": 0.0,
+      "routing_at_3": 0.0,
+      "fallback_rate": 100.0
+    },
+    "2": {
+      "n": 2,
+      "routing_at_1": 50.0,
+      "routing_at_3": 50.0,
+      "fallback_rate": 50.0
+    },
+    "3": {
+      "n": 1,
+      "routing_at_1": 0.0,
+      "routing_at_3": 100.0,
+      "fallback_rate": 100.0
+    }
+  },
+  "top_confusions": [
+    {
+      "expected_agent_id": 3,
+      "predicted_agent_id": 1,
+      "count": 1
+    },
+    {
+      "expected_agent_id": 2,
+      "predicted_agent_id": 3,
+      "count": 1
+    },
+    {
+      "expected_agent_id": 1,
+      "predicted_agent_id": 2,
+      "count": 1
+    }
+  ],
+  "top_errors": [
+    {
+      "error": "Connection error.",
+      "count": 6
+    }
+  ],
+  "cases": [
+    {
+      "case_id": 1121,
+      "expected_agent_id": 4,
+      "primary_agent_id": -1,
+      "chosen_agent_ids": [],
+      "execution_plan": [],
+      "routing_bucket": "error",
+      "routing_confidence": 0.0,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 0.0,
+      "error": "Connection error.",
+      "question": "Quanto tempo após início retirar a placa na dispersibilidade?",
+      "group": "in_68_metodos_quantitativos"
+    },
+    {
+      "case_id": 6,
+      "expected_agent_id": 0,
+      "primary_agent_id": -1,
+      "chosen_agent_ids": [],
+      "execution_plan": [],
+      "routing_bucket": "error",
+      "routing_confidence": 0.0,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 0.0,
+      "error": "Connection error.",
+      "question": "Em um procedimento de higienização, quando aparece PAA, como esse termo deve ser apresentado de forma padronizada?",
+      "group": "glossario_dairy_rag"
+    },
+    {
+      "case_id": 262,
+      "expected_agent_id": 2,
+      "primary_agent_id": 2,
+      "chosen_agent_ids": [
+        0,
+        3,
+        2,
+        4,
+        6
+      ],
+      "execution_plan": [
+        0,
+        3,
+        2,
+        4
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.74,
+      "fallback_used": true,
+      "fallback_attempts": 1,
+      "fallback_trigger": "weak_or_conflicting_evidence",
+      "latency_ms": 33077.20249996055,
+      "error": "",
+      "question": "Quais sinais de processo crítico podem ser inferidos quando o D(-) supera o L(+) no iogurte?",
+      "group": "edicao_132_pos_acidificacao_iogurtes_leites_fermentados"
+    },
+    {
+      "case_id": 564,
+      "expected_agent_id": 3,
+      "primary_agent_id": -1,
+      "chosen_agent_ids": [],
+      "execution_plan": [],
+      "routing_bucket": "error",
+      "routing_confidence": 0.0,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 0.0,
+      "error": "Connection error.",
+      "question": "Como deve ser a denominação quando há ingredientes adicionais?",
+      "group": "instrucao_normativa_71_2020_cream_cheese"
+    },
+    {
+      "case_id": 640,
+      "expected_agent_id": 3,
+      "primary_agent_id": 1,
+      "chosen_agent_ids": [
+        0,
+        3,
+        1,
+        6
+      ],
+      "execution_plan": [
+        0,
+        3,
+        1,
+        6
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.74,
+      "fallback_used": true,
+      "fallback_attempts": 1,
+      "fallback_trigger": "weak_or_conflicting_evidence",
+      "latency_ms": 30084.227900020778,
+      "error": "",
+      "question": "Como rotular o provolone maturado quando for usado aroma de fumaça?",
+      "group": "instrucao_normativa_73_2020_provolone"
+    },
+    {
+      "case_id": 134,
+      "expected_agent_id": 1,
+      "primary_agent_id": -1,
+      "chosen_agent_ids": [],
+      "execution_plan": [],
+      "routing_bucket": "error",
+      "routing_confidence": 0.0,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 0.0,
+      "error": "Connection error.",
+      "question": "Quando a janela de amargor passa a ser um problema comercial?",
+      "group": "edicao_164_cultivos_adjuntos_queijos_maturados"
+    },
+    {
+      "case_id": 456,
+      "expected_agent_id": 2,
+      "primary_agent_id": 3,
+      "chosen_agent_ids": [
+        0,
+        3
+      ],
+      "execution_plan": [
+        0,
+        3
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.72,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 14713.107999996282,
+      "error": "",
+      "question": "As proteínas do soro isoladamente conseguem formar gel com a mesma eficiência da caseína?",
+      "group": "edicao_172_produtos_lacteos_frescos_biociencia_biossolucoes"
+    },
+    {
+      "case_id": 20,
+      "expected_agent_id": 0,
+      "primary_agent_id": -1,
+      "chosen_agent_ids": [],
+      "execution_plan": [],
+      "routing_bucket": "error",
+      "routing_confidence": 0.0,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 0.0,
+      "error": "Connection error.",
+      "question": "Existe no mercado algum similar à quimosina de terceira geração além da Novonesis?",
+      "group": "verdades_absolutas_rag"
+    },
+    {
+      "case_id": 882,
+      "expected_agent_id": 4,
+      "primary_agent_id": -1,
+      "chosen_agent_ids": [],
+      "execution_plan": [],
+      "routing_bucket": "error",
+      "routing_confidence": 0.0,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 0.0,
+      "error": "Connection error.",
+      "question": "No método espectrofotométrico, o que é transmitância?",
+      "group": "in_68_metodos_analiticos_oficiais_fisico_quimicos_controle_leite"
+    },
+    {
+      "case_id": 79,
+      "expected_agent_id": 1,
+      "primary_agent_id": 2,
+      "chosen_agent_ids": [
+        0,
+        3,
+        2,
+        4,
+        6
+      ],
+      "execution_plan": [
+        0,
+        3,
+        2,
+        4
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.74,
+      "fallback_used": true,
+      "fallback_attempts": 1,
+      "fallback_trigger": "weak_or_conflicting_evidence",
+      "latency_ms": 29694.236000068486,
+      "error": "",
+      "question": "Em qual faixa de pH deve ser feito o corte da coalhada?",
+      "group": "edicao_159_160_cottage_ingredientes_naturais"
+    }
+  ],
+  "wall_time_ms": 154055.1509000361
+}

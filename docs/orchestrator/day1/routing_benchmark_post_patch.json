@@ -1,0 +1,2443 @@
+{
+  "total_cases": 100,
+  "measured_cases": 100,
+  "failed_cases": 0,
+  "routing_at_1": 63.0,
+  "routing_at_3": 77.0,
+  "fallback_rate": 6.0,
+  "latency_ms": {
+    "p50": 12020.586400059983,
+    "p95": 20268.220279959496,
+    "p99": 24803.48712106587,
+    "mean": 12546.61000599619
+  },
+  "bucket_distribution": {
+    "high": 45,
+    "medium": 55
+  },
+  "per_expected_agent": {
+    "0": {
+      "n": 4,
+      "routing_at_1": 100.0,
+      "routing_at_3": 100.0,
+      "fallback_rate": 0.0
+    },
+    "1": {
+      "n": 22,
+      "routing_at_1": 72.72727272727273,
+      "routing_at_3": 72.72727272727273,
+      "fallback_rate": 4.545454545454546
+    },
+    "2": {
+      "n": 15,
+      "routing_at_1": 80.0,
+      "routing_at_3": 80.0,
+      "fallback_rate": 0.0
+    },
+    "3": {
+      "n": 34,
+      "routing_at_1": 58.8235294117647,
+      "routing_at_3": 100.0,
+      "fallback_rate": 2.9411764705882355
+    },
+    "4": {
+      "n": 25,
+      "routing_at_1": 44.0,
+      "routing_at_3": 44.0,
+      "fallback_rate": 16.0
+    }
+  },
+  "top_confusions": [
+    {
+      "expected_agent_id": 3,
+      "predicted_agent_id": 1,
+      "count": 8
+    },
+    {
+      "expected_agent_id": 4,
+      "predicted_agent_id": 3,
+      "count": 5
+    },
+    {
+      "expected_agent_id": 4,
+      "predicted_agent_id": 0,
+      "count": 4
+    },
+    {
+      "expected_agent_id": 4,
+      "predicted_agent_id": 1,
+      "count": 3
+    },
+    {
+      "expected_agent_id": 1,
+      "predicted_agent_id": 3,
+      "count": 2
+    },
+    {
+      "expected_agent_id": 3,
+      "predicted_agent_id": 6,
+      "count": 2
+    },
+    {
+      "expected_agent_id": 3,
+      "predicted_agent_id": 0,
+      "count": 2
+    },
+    {
+      "expected_agent_id": 1,
+      "predicted_agent_id": 2,
+      "count": 2
+    },
+    {
+      "expected_agent_id": 3,
+      "predicted_agent_id": 5,
+      "count": 1
+    },
+    {
+      "expected_agent_id": 4,
+      "predicted_agent_id": 2,
+      "count": 1
+    },
+    {
+      "expected_agent_id": 2,
+      "predicted_agent_id": 3,
+      "count": 1
+    },
+    {
+      "expected_agent_id": 1,
+      "predicted_agent_id": 4,
+      "count": 1
+    },
+    {
+      "expected_agent_id": 2,
+      "predicted_agent_id": 0,
+      "count": 1
+    },
+    {
+      "expected_agent_id": 4,
+      "predicted_agent_id": 6,
+      "count": 1
+    },
+    {
+      "expected_agent_id": 3,
+      "predicted_agent_id": 2,
+      "count": 1
+    },
+    {
+      "expected_agent_id": 1,
+      "predicted_agent_id": 0,
+      "count": 1
+    },
+    {
+      "expected_agent_id": 2,
+      "predicted_agent_id": 4,
+      "count": 1
+    }
+  ],
+  "top_errors": [],
+  "cases": [
+    {
+      "case_id": 1093,
+      "expected_agent_id": 4,
+      "primary_agent_id": 3,
+      "chosen_agent_ids": [
+        0,
+        3
+      ],
+      "execution_plan": [
+        0,
+        3
+      ],
+      "routing_bucket": "high",
+      "routing_confidence": 0.95,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 8558.818000019528,
+      "error": "",
+      "question": "Qual comprimento de onda de leitura no ácido sórbico?",
+      "group": "in_68_metodos_quantitativos"
+    },
+    {
+      "case_id": 517,
+      "expected_agent_id": 3,
+      "primary_agent_id": 1,
+      "chosen_agent_ids": [
+        0,
+        3,
+        1
+      ],
+      "execution_plan": [
+        0,
+        3,
+        1
+      ],
+      "routing_bucket": "high",
+      "routing_confidence": 0.95,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 14223.272099974565,
+      "error": "",
+      "question": "Como deve ser o sabor esperado do minas padrão?",
+      "group": "instrucao_normativa_66_2020_minas_padrao"
+    },
+    {
+      "case_id": 629,
+      "expected_agent_id": 3,
+      "primary_agent_id": 3,
+      "chosen_agent_ids": [
+        0,
+        3
+      ],
+      "execution_plan": [
+        0,
+        3
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.6,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 9055.244899936952,
+      "error": "",
+      "question": "Como deve ser a embalagem do provolone?",
+      "group": "instrucao_normativa_73_2020_provolone"
+    },
+    {
+      "case_id": 13,
+      "expected_agent_id": 0,
+      "primary_agent_id": 0,
+      "chosen_agent_ids": [
+        0,
+        3
+      ],
+      "execution_plan": [
+        0,
+        3
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.6,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 9275.976700009778,
+      "error": "",
+      "question": "Para preencher uma ficha de processo, devo manter Rennet em inglês ou registrar Coagulante?",
+      "group": "glossario_dairy_rag"
+    },
+    {
+      "case_id": 597,
+      "expected_agent_id": 3,
+      "primary_agent_id": 5,
+      "chosen_agent_ids": [
+        0,
+        3,
+        5
+      ],
+      "execution_plan": [
+        0,
+        3,
+        5
+      ],
+      "routing_bucket": "high",
+      "routing_confidence": 0.92,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 8311.53299997095,
+      "error": "",
+      "question": "Pode haver impurezas ou substâncias estranhas na sobremesa láctea?",
+      "group": "instrucao_normativa_72_2020_sobremesa_lactea"
+    },
+    {
+      "case_id": 1130,
+      "expected_agent_id": 4,
+      "primary_agent_id": 0,
+      "chosen_agent_ids": [],
+      "execution_plan": [],
+      "routing_bucket": "high",
+      "routing_confidence": 0.99,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 1885.3948999894783,
+      "error": "",
+      "question": "Posso trabalhar com inflamáveis perto de chama?",
+      "group": "in_68_recomendacoes_gerais"
+    },
+    {
+      "case_id": 619,
+      "expected_agent_id": 3,
+      "primary_agent_id": 1,
+      "chosen_agent_ids": [
+        0,
+        3,
+        1
+      ],
+      "execution_plan": [
+        0,
+        3,
+        1
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.84,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 16657.119500101544,
+      "error": "",
+      "question": "Qual o perfil sensorial do provolone maturado em aroma e consistência?",
+      "group": "instrucao_normativa_73_2020_provolone"
+    },
+    {
+      "case_id": 25,
+      "expected_agent_id": 0,
+      "primary_agent_id": 0,
+      "chosen_agent_ids": [
+        0,
+        3
+      ],
+      "execution_plan": [
+        0,
+        3
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.6,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 10977.723699994385,
+      "error": "",
+      "question": "As metodologias usadas para definir C/P e IMCU foram desenvolvidas pela mesma empresa que criou os coagulantes?",
+      "group": "verdades_absolutas_rag"
+    },
+    {
+      "case_id": 257,
+      "expected_agent_id": 2,
+      "primary_agent_id": 2,
+      "chosen_agent_ids": [
+        0,
+        3,
+        2
+      ],
+      "execution_plan": [
+        0,
+        3,
+        2
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.84,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 12564.41710004583,
+      "error": "",
+      "question": "Como fica a distribuição de isômeros em um iogurte fresco feito com S. thermophilus e L. bulgaricus?",
+      "group": "edicao_132_pos_acidificacao_iogurtes_leites_fermentados"
+    },
+    {
+      "case_id": 408,
+      "expected_agent_id": 2,
+      "primary_agent_id": 2,
+      "chosen_agent_ids": [
+        0,
+        3,
+        2
+      ],
+      "execution_plan": [
+        0,
+        3,
+        2
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.84,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 19939.86839998979,
+      "error": "",
+      "question": "Por que a presença de NSLAB afeta a vida útil e a qualidade do iogurte?",
+      "group": "edicao_167_nslab_impactos_qualidade_iogurte"
+    },
+    {
+      "case_id": 318,
+      "expected_agent_id": 2,
+      "primary_agent_id": 2,
+      "chosen_agent_ids": [
+        0,
+        3,
+        2
+      ],
+      "execution_plan": [
+        0,
+        3,
+        2
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.84,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 9023.836399894208,
+      "error": "",
+      "question": "Quando as centrífugas passaram a ser usadas na produção de Skyr e até quando predominaram?",
+      "group": "edicao_144_skyr"
+    },
+    {
+      "case_id": 607,
+      "expected_agent_id": 3,
+      "primary_agent_id": 1,
+      "chosen_agent_ids": [
+        0,
+        3,
+        1
+      ],
+      "execution_plan": [
+        0,
+        3,
+        1
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.84,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 11514.718299964443,
+      "error": "",
+      "question": "Quais são as formas de apresentação do provolone quanto à maturação e defumação?",
+      "group": "instrucao_normativa_73_2020_provolone"
+    },
+    {
+      "case_id": 689,
+      "expected_agent_id": 3,
+      "primary_agent_id": 3,
+      "chosen_agent_ids": [
+        0,
+        3
+      ],
+      "execution_plan": [
+        0,
+        3
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.6,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 4603.9253999479115,
+      "error": "",
+      "question": "Qual é a data dessa medida provisória?",
+      "group": "mp_772_2017_multas"
+    },
+    {
+      "case_id": 1068,
+      "expected_agent_id": 4,
+      "primary_agent_id": 2,
+      "chosen_agent_ids": [
+        0,
+        3,
+        2,
+        4,
+        6
+      ],
+      "execution_plan": [
+        0,
+        3,
+        2,
+        4
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.74,
+      "fallback_used": true,
+      "fallback_attempts": 1,
+      "fallback_trigger": "weak_or_conflicting_evidence",
+      "latency_ms": 17537.069399957545,
+      "error": "",
+      "question": "Qual o pH final alternativo no leite fermentado?",
+      "group": "in_68_metodos_quantitativos"
+    },
+    {
+      "case_id": 848,
+      "expected_agent_id": 3,
+      "primary_agent_id": 3,
+      "chosen_agent_ids": [
+        0,
+        3
+      ],
+      "execution_plan": [
+        0,
+        3
+      ],
+      "routing_bucket": "high",
+      "routing_confidence": 0.95,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 15003.097799955867,
+      "error": "",
+      "question": "Para exportar a país com exigência sanitária específica, o que o produto precisa atender?",
+      "group": "riispoa_decreto_9013_2017"
+    },
+    {
+      "case_id": 644,
+      "expected_agent_id": 3,
+      "primary_agent_id": 3,
+      "chosen_agent_ids": [
+        0,
+        3
+      ],
+      "execution_plan": [
+        0,
+        3
+      ],
+      "routing_bucket": "high",
+      "routing_confidence": 0.86,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 13086.41359989997,
+      "error": "",
+      "question": "Como identificar no rótulo o provolone destinado à indústria?",
+      "group": "instrucao_normativa_73_2020_provolone"
+    },
+    {
+      "case_id": 427,
+      "expected_agent_id": 2,
+      "primary_agent_id": 2,
+      "chosen_agent_ids": [
+        0,
+        3,
+        2
+      ],
+      "execution_plan": [
+        0,
+        3,
+        2
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.84,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 8840.133300051093,
+      "error": "",
+      "question": "Quais análises microbiológicas são usadas para detectar a presença de NSLAB?",
+      "group": "edicao_167_nslab_impactos_qualidade_iogurte"
+    },
+    {
+      "case_id": 84,
+      "expected_agent_id": 1,
+      "primary_agent_id": 1,
+      "chosen_agent_ids": [
+        0,
+        3,
+        1,
+        6
+      ],
+      "execution_plan": [
+        0,
+        3,
+        1,
+        6
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.74,
+      "fallback_used": true,
+      "fallback_attempts": 1,
+      "fallback_trigger": "weak_or_conflicting_evidence",
+      "latency_ms": 18386.65750005748,
+      "error": "",
+      "question": "Posso produzir cottage sem usar coagulante?",
+      "group": "edicao_159_160_cottage_ingredientes_naturais"
+    },
+    {
+      "case_id": 155,
+      "expected_agent_id": 1,
+      "primary_agent_id": 3,
+      "chosen_agent_ids": [
+        0,
+        3
+      ],
+      "execution_plan": [
+        0,
+        3
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.72,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 12102.171300095506,
+      "error": "",
+      "question": "O que acontece com a estabilidade da membrana do glóbulo de gordura quando o pH do leite cai?",
+      "group": "edicao_166_rentabilidade_producao_queijos"
+    },
+    {
+      "case_id": 720,
+      "expected_agent_id": 3,
+      "primary_agent_id": 3,
+      "chosen_agent_ids": [
+        0,
+        3
+      ],
+      "execution_plan": [
+        0,
+        3
+      ],
+      "routing_bucket": "high",
+      "routing_confidence": 0.86,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 11908.10869995039,
+      "error": "",
+      "question": "Na prática, o que entra como informação nutricional complementar na rotulagem?",
+      "group": "rdc_54_2012_informacao_nutricional_complementar"
+    },
+    {
+      "case_id": 1106,
+      "expected_agent_id": 4,
+      "primary_agent_id": 4,
+      "chosen_agent_ids": [
+        0,
+        3,
+        4
+      ],
+      "execution_plan": [
+        0,
+        3,
+        4
+      ],
+      "routing_bucket": "high",
+      "routing_confidence": 0.86,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 11633.363800006919,
+      "error": "",
+      "question": "Qual ponto final no método argentométrico de cloretos?",
+      "group": "in_68_metodos_quantitativos"
+    },
+    {
+      "case_id": 1082,
+      "expected_agent_id": 4,
+      "primary_agent_id": 4,
+      "chosen_agent_ids": [
+        0,
+        3,
+        4
+      ],
+      "execution_plan": [
+        0,
+        3,
+        4
+      ],
+      "routing_bucket": "high",
+      "routing_confidence": 0.95,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 15852.137999958359,
+      "error": "",
+      "question": "Qual fórmula de cálculo para SAN na manteiga?",
+      "group": "in_68_metodos_quantitativos"
+    },
+    {
+      "case_id": 240,
+      "expected_agent_id": 1,
+      "primary_agent_id": 1,
+      "chosen_agent_ids": [
+        0,
+        3
+      ],
+      "execution_plan": [
+        0,
+        3,
+        1
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.85,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 19058.82759997621,
+      "error": "",
+      "question": "Quais são os dois mecanismos de dessoramento destacados?",
+      "group": "edicao_170_defeitos_mais_comuns_queijos_parte_2"
+    },
+    {
+      "case_id": 512,
+      "expected_agent_id": 3,
+      "primary_agent_id": 6,
+      "chosen_agent_ids": [
+        0,
+        3
+      ],
+      "execution_plan": [
+        0,
+        3,
+        6
+      ],
+      "routing_bucket": "high",
+      "routing_confidence": 0.95,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 18516.060299938545,
+      "error": "",
+      "question": "Se eu quiser adicionar condimentos, frutas, cereais, legumes, doces, embutidos cárneos ou fibras, qual condição esses ingredientes precisam cumprir?",
+      "group": "instrucao_normativa_66_2020_minas_padrao"
+    },
+    {
+      "case_id": 747,
+      "expected_agent_id": 3,
+      "primary_agent_id": 3,
+      "chosen_agent_ids": [
+        0,
+        3
+      ],
+      "execution_plan": [
+        0,
+        3
+      ],
+      "routing_bucket": "high",
+      "routing_confidence": 0.95,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 7515.594199998304,
+      "error": "",
+      "question": "Na declaração comparativa, as porções comparadas podem ser diferentes?",
+      "group": "rdc_54_2012_informacao_nutricional_complementar"
+    },
+    {
+      "case_id": 1133,
+      "expected_agent_id": 4,
+      "primary_agent_id": 0,
+      "chosen_agent_ids": [],
+      "execution_plan": [],
+      "routing_bucket": "high",
+      "routing_confidence": 0.99,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 2549.73909992259,
+      "error": "",
+      "question": "Posso inalar vapores para identificar substâncias?",
+      "group": "in_68_recomendacoes_gerais"
+    },
+    {
+      "case_id": 199,
+      "expected_agent_id": 1,
+      "primary_agent_id": 1,
+      "chosen_agent_ids": [
+        0,
+        3,
+        1,
+        2
+      ],
+      "execution_plan": [
+        0,
+        3,
+        1,
+        2
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.74,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 12409.208199940622,
+      "error": "",
+      "question": "Qual composto é o principal indicador da fermentação butírica no queijo?",
+      "group": "edicao_169_defeitos_mais_comuns_queijos_parte_1"
+    },
+    {
+      "case_id": 950,
+      "expected_agent_id": 4,
+      "primary_agent_id": 4,
+      "chosen_agent_ids": [
+        0,
+        3,
+        4
+      ],
+      "execution_plan": [
+        0,
+        3,
+        4
+      ],
+      "routing_bucket": "high",
+      "routing_confidence": 0.86,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 8541.850500041619,
+      "error": "",
+      "question": "Qual volume final devo completar no preparo do tampão pH 4?",
+      "group": "in_68_solucoes_tampoes"
+    },
+    {
+      "case_id": 610,
+      "expected_agent_id": 3,
+      "primary_agent_id": 3,
+      "chosen_agent_ids": [
+        0,
+        3
+      ],
+      "execution_plan": [
+        0,
+        3
+      ],
+      "routing_bucket": "high",
+      "routing_confidence": 0.86,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 11118.01699991338,
+      "error": "",
+      "question": "Quais são os ingredientes obrigatórios do provolone?",
+      "group": "instrucao_normativa_73_2020_provolone"
+    },
+    {
+      "case_id": 746,
+      "expected_agent_id": 3,
+      "primary_agent_id": 0,
+      "chosen_agent_ids": [
+        0,
+        3
+      ],
+      "execution_plan": [
+        0,
+        3
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.7,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 8520.873000030406,
+      "error": "",
+      "question": "Se não existir alimento de referência, posso usar declaração comparativa mesmo assim?",
+      "group": "rdc_54_2012_informacao_nutricional_complementar"
+    },
+    {
+      "case_id": 776,
+      "expected_agent_id": 3,
+      "primary_agent_id": 3,
+      "chosen_agent_ids": [
+        0,
+        3
+      ],
+      "execution_plan": [
+        0,
+        3
+      ],
+      "routing_bucket": "high",
+      "routing_confidence": 0.95,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 9060.278799966909,
+      "error": "",
+      "question": "Quem fiscaliza estabelecimento que vende produto de origem animal para outro estado ou para exportação?",
+      "group": "riispoa_decreto_9013_2017"
+    },
+    {
+      "case_id": 314,
+      "expected_agent_id": 2,
+      "primary_agent_id": 2,
+      "chosen_agent_ids": [
+        0,
+        3,
+        2
+      ],
+      "execution_plan": [
+        0,
+        3,
+        2
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.84,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 8136.611700057983,
+      "error": "",
+      "question": "Qual foi o aumento informado nos lançamentos de produtos tipo Skyr comparando Jan-Set de 2017 com Jan-Set de 2018?",
+      "group": "edicao_144_skyr"
+    },
+    {
+      "case_id": 1083,
+      "expected_agent_id": 4,
+      "primary_agent_id": 1,
+      "chosen_agent_ids": [
+        0,
+        3,
+        1
+      ],
+      "execution_plan": [
+        0,
+        3,
+        1
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.84,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 12816.171600017697,
+      "error": "",
+      "question": "Na análise de queijo, qual massa inicial devo usar?",
+      "group": "in_68_metodos_quantitativos"
+    },
+    {
+      "case_id": 147,
+      "expected_agent_id": 1,
+      "primary_agent_id": 1,
+      "chosen_agent_ids": [
+        0,
+        3,
+        1
+      ],
+      "execution_plan": [
+        0,
+        3,
+        1
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.84,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 10816.1853000056,
+      "error": "",
+      "question": "Por que o rendimento é tratado como um ponto vital para a rentabilidade na fabricação de queijos?",
+      "group": "edicao_166_rentabilidade_producao_queijos"
+    },
+    {
+      "case_id": 101,
+      "expected_agent_id": 1,
+      "primary_agent_id": 2,
+      "chosen_agent_ids": [
+        0,
+        3,
+        2
+      ],
+      "execution_plan": [
+        0,
+        3,
+        2
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.84,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 13838.814100017771,
+      "error": "",
+      "question": "Qual o papel do Lactobacillus helveticus na produção?",
+      "group": "edicao_162_inovacao_cultivo_rendimento_produtividade_queijos_prensados"
+    },
+    {
+      "case_id": 1143,
+      "expected_agent_id": 4,
+      "primary_agent_id": 4,
+      "chosen_agent_ids": [
+        0,
+        3,
+        4
+      ],
+      "execution_plan": [
+        0,
+        3,
+        4
+      ],
+      "routing_bucket": "high",
+      "routing_confidence": 0.86,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 12280.167000018992,
+      "error": "",
+      "question": "Qual a quantidade mínima de amostra para enviar ao laboratório?",
+      "group": "in_68_recomendacoes_gerais"
+    },
+    {
+      "case_id": 429,
+      "expected_agent_id": 2,
+      "primary_agent_id": 2,
+      "chosen_agent_ids": [
+        0,
+        3,
+        2
+      ],
+      "execution_plan": [
+        0,
+        3,
+        2
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.84,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 17577.570399967954,
+      "error": "",
+      "question": "Por que a contagem total de NSLAB pode não ser indicada em produtos com cultivos mesofílicos?",
+      "group": "edicao_167_nslab_impactos_qualidade_iogurte"
+    },
+    {
+      "case_id": 690,
+      "expected_agent_id": 3,
+      "primary_agent_id": 3,
+      "chosen_agent_ids": [
+        0,
+        3
+      ],
+      "execution_plan": [
+        0,
+        3
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.6,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 15127.896799938753,
+      "error": "",
+      "question": "Essa medida provisória já tem validade de lei?",
+      "group": "mp_772_2017_multas"
+    },
+    {
+      "case_id": 145,
+      "expected_agent_id": 1,
+      "primary_agent_id": 2,
+      "chosen_agent_ids": [
+        0,
+        3,
+        2
+      ],
+      "execution_plan": [
+        0,
+        3,
+        2
+      ],
+      "routing_bucket": "high",
+      "routing_confidence": 0.92,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 14359.935499960557,
+      "error": "",
+      "question": "Por que acelerar a formação de sabor com cultivos adjuntos pode ajudar financeiramente a indústria?",
+      "group": "edicao_164_cultivos_adjuntos_queijos_maturados"
+    },
+    {
+      "case_id": 846,
+      "expected_agent_id": 3,
+      "primary_agent_id": 3,
+      "chosen_agent_ids": [
+        0,
+        3
+      ],
+      "execution_plan": [
+        0,
+        3
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.84,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 20483.793899999,
+      "error": "",
+      "question": "Quando um produto é considerado produto lácteo composto pelo decreto?",
+      "group": "riispoa_decreto_9013_2017"
+    },
+    {
+      "case_id": 567,
+      "expected_agent_id": 3,
+      "primary_agent_id": 3,
+      "chosen_agent_ids": [
+        0,
+        3
+      ],
+      "execution_plan": [
+        0,
+        3
+      ],
+      "routing_bucket": "high",
+      "routing_confidence": 0.86,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 7681.474800105207,
+      "error": "",
+      "question": "Qual o prazo para adequação à norma?",
+      "group": "instrucao_normativa_71_2020_cream_cheese"
+    },
+    {
+      "case_id": 844,
+      "expected_agent_id": 3,
+      "primary_agent_id": 3,
+      "chosen_agent_ids": [
+        0,
+        3
+      ],
+      "execution_plan": [
+        0,
+        3
+      ],
+      "routing_bucket": "high",
+      "routing_confidence": 0.95,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 10320.727300015278,
+      "error": "",
+      "question": "O número de registro do estabelecimento precisa aparecer no carimbo oficial?",
+      "group": "riispoa_decreto_9013_2017"
+    },
+    {
+      "case_id": 65,
+      "expected_agent_id": 1,
+      "primary_agent_id": 1,
+      "chosen_agent_ids": [
+        0,
+        3,
+        1
+      ],
+      "execution_plan": [
+        0,
+        3,
+        1
+      ],
+      "routing_bucket": "high",
+      "routing_confidence": 0.92,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 12356.792400008999,
+      "error": "",
+      "question": "Por que a lavagem da massa não é amplamente utilizada?",
+      "group": "edicao_152_browning_pizza"
+    },
+    {
+      "case_id": 108,
+      "expected_agent_id": 1,
+      "primary_agent_id": 1,
+      "chosen_agent_ids": [
+        0,
+        3,
+        1
+      ],
+      "execution_plan": [
+        0,
+        3,
+        1
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.84,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 11241.646399954334,
+      "error": "",
+      "question": "Qual o impacto do CHY-MAX® Supreme na estrutura do queijo?",
+      "group": "edicao_162_inovacao_cultivo_rendimento_produtividade_queijos_prensados"
+    },
+    {
+      "case_id": 781,
+      "expected_agent_id": 3,
+      "primary_agent_id": 3,
+      "chosen_agent_ids": [
+        0,
+        3
+      ],
+      "execution_plan": [
+        0,
+        3
+      ],
+      "routing_bucket": "high",
+      "routing_confidence": 0.86,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 10596.11720009707,
+      "error": "",
+      "question": "Se meu estabelecimento já é fiscalizado pelo DIPOA, ainda pode haver outra fiscalização industrial ou sanitária para produto de origem animal?",
+      "group": "riispoa_decreto_9013_2017"
+    },
+    {
+      "case_id": 1139,
+      "expected_agent_id": 4,
+      "primary_agent_id": 4,
+      "chosen_agent_ids": [
+        0,
+        3,
+        4
+      ],
+      "execution_plan": [
+        0,
+        3,
+        4
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.84,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 9532.374599948525,
+      "error": "",
+      "question": "Como apagar incêndio com papel ou madeira?",
+      "group": "in_68_recomendacoes_gerais"
+    },
+    {
+      "case_id": 422,
+      "expected_agent_id": 2,
+      "primary_agent_id": 2,
+      "chosen_agent_ids": [
+        0,
+        3,
+        2
+      ],
+      "execution_plan": [
+        0,
+        3,
+        2
+      ],
+      "routing_bucket": "high",
+      "routing_confidence": 0.92,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 8921.580399968661,
+      "error": "",
+      "question": "Quais metabólitos do citrato podem ser gerados por Enterococcus em iogurtes?",
+      "group": "edicao_167_nslab_impactos_qualidade_iogurte"
+    },
+    {
+      "case_id": 1111,
+      "expected_agent_id": 4,
+      "primary_agent_id": 4,
+      "chosen_agent_ids": [
+        0,
+        3,
+        4
+      ],
+      "execution_plan": [
+        0,
+        3,
+        4
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.84,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 10351.163399987854,
+      "error": "",
+      "question": "Qual volume de leite posso usar na proveta para densidade?",
+      "group": "in_68_metodos_quantitativos"
+    },
+    {
+      "case_id": 1122,
+      "expected_agent_id": 4,
+      "primary_agent_id": 1,
+      "chosen_agent_ids": [
+        0,
+        3,
+        1,
+        2
+      ],
+      "execution_plan": [
+        0,
+        3,
+        1,
+        2
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.74,
+      "fallback_used": true,
+      "fallback_attempts": 1,
+      "fallback_trigger": "weak_or_conflicting_evidence",
+      "latency_ms": 23804.45990001317,
+      "error": "",
+      "question": "Qual tempo total de agitação na dispersibilidade?",
+      "group": "in_68_metodos_quantitativos"
+    },
+    {
+      "case_id": 75,
+      "expected_agent_id": 1,
+      "primary_agent_id": 1,
+      "chosen_agent_ids": [
+        0,
+        3,
+        1
+      ],
+      "execution_plan": [
+        0,
+        3,
+        1
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.84,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 9910.26969999075,
+      "error": "",
+      "question": "O que é o dressing no queijo cottage?",
+      "group": "edicao_159_160_cottage_ingredientes_naturais"
+    },
+    {
+      "case_id": 808,
+      "expected_agent_id": 3,
+      "primary_agent_id": 3,
+      "chosen_agent_ids": [
+        0,
+        3
+      ],
+      "execution_plan": [
+        0,
+        3
+      ],
+      "routing_bucket": "high",
+      "routing_confidence": 0.95,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 10214.66179995332,
+      "error": "",
+      "question": "Animal estranho ao processo industrial pode ficar dentro do estabelecimento?",
+      "group": "riispoa_decreto_9013_2017"
+    },
+    {
+      "case_id": 148,
+      "expected_agent_id": 1,
+      "primary_agent_id": 1,
+      "chosen_agent_ids": [
+        0,
+        3,
+        1
+      ],
+      "execution_plan": [
+        0,
+        3,
+        1
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.84,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 10662.507400033064,
+      "error": "",
+      "question": "Na prática, quais constituintes do leite são mais críticos quando o foco é aumentar o rendimento do queijo?",
+      "group": "edicao_166_rentabilidade_producao_queijos"
+    },
+    {
+      "case_id": 278,
+      "expected_agent_id": 2,
+      "primary_agent_id": 3,
+      "chosen_agent_ids": [
+        0,
+        3
+      ],
+      "execution_plan": [
+        0,
+        3
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.6,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 8834.553400054574,
+      "error": "",
+      "question": "Na fermentação convencional, o que normalmente acontece com a galactose liberada da lactose?",
+      "group": "edicao_133_fermentado"
+    },
+    {
+      "case_id": 142,
+      "expected_agent_id": 1,
+      "primary_agent_id": 4,
+      "chosen_agent_ids": [
+        0,
+        3,
+        4
+      ],
+      "execution_plan": [
+        0,
+        3,
+        4
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.84,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 12465.81339999102,
+      "error": "",
+      "question": "A garantia de qualidade do leite é tratada como ação imediata ou como estratégia de médio-longo prazo?",
+      "group": "edicao_164_cultivos_adjuntos_queijos_maturados"
+    },
+    {
+      "case_id": 731,
+      "expected_agent_id": 3,
+      "primary_agent_id": 3,
+      "chosen_agent_ids": [
+        0,
+        3
+      ],
+      "execution_plan": [
+        0,
+        3
+      ],
+      "routing_bucket": "high",
+      "routing_confidence": 0.95,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 13645.569700049236,
+      "error": "",
+      "question": "Se a declaração for sobre gordura ou colesterol, o que preciso abrir na tabela?",
+      "group": "rdc_54_2012_informacao_nutricional_complementar"
+    },
+    {
+      "case_id": 22,
+      "expected_agent_id": 0,
+      "primary_agent_id": 0,
+      "chosen_agent_ids": [
+        0,
+        3
+      ],
+      "execution_plan": [
+        0,
+        3,
+        1
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.7,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 12984.113999991678,
+      "error": "",
+      "question": "A quimosina de segunda geração ainda é referência no mercado ou já foi superada?",
+      "group": "verdades_absolutas_rag"
+    },
+    {
+      "case_id": 1171,
+      "expected_agent_id": 4,
+      "primary_agent_id": 3,
+      "chosen_agent_ids": [
+        0,
+        3
+      ],
+      "execution_plan": [
+        0,
+        3
+      ],
+      "routing_bucket": "high",
+      "routing_confidence": 0.95,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 8102.081099990755,
+      "error": "",
+      "question": "Qual a temperatura máxima no estabelecimento processador?",
+      "group": "qualidade_leite"
+    },
+    {
+      "case_id": 343,
+      "expected_agent_id": 2,
+      "primary_agent_id": 0,
+      "chosen_agent_ids": [],
+      "execution_plan": [],
+      "routing_bucket": "high",
+      "routing_confidence": 0.99,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 2260.335099999793,
+      "error": "",
+      "question": "Quais são os principais motivos de consumo citados para produtos em base vegetal?",
+      "group": "edicao_146_produtos_fermentados_base_vegetal"
+    },
+    {
+      "case_id": 625,
+      "expected_agent_id": 3,
+      "primary_agent_id": 3,
+      "chosen_agent_ids": [
+        0,
+        3,
+        1
+      ],
+      "execution_plan": [
+        0,
+        3,
+        1
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.84,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 18042.43180004414,
+      "error": "",
+      "question": "Quais formatos são permitidos para o provolone?",
+      "group": "instrucao_normativa_73_2020_provolone"
+    },
+    {
+      "case_id": 898,
+      "expected_agent_id": 4,
+      "primary_agent_id": 6,
+      "chosen_agent_ids": [
+        0,
+        3
+      ],
+      "execution_plan": [
+        0,
+        3,
+        6
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.85,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 11425.01139990054,
+      "error": "",
+      "question": "Na preparação do amido 1%, preciso fazer pasta antes de completar o volume?",
+      "group": "in_68_solucoes_indicadora"
+    },
+    {
+      "case_id": 877,
+      "expected_agent_id": 4,
+      "primary_agent_id": 0,
+      "chosen_agent_ids": [],
+      "execution_plan": [],
+      "routing_bucket": "high",
+      "routing_confidence": 0.99,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 4689.021799946204,
+      "error": "",
+      "question": "Qual a diferença entre % (m/m) e % (m/v) na expressão de concentração?",
+      "group": "in_68_metodos_analiticos_oficiais_fisico_quimicos_controle_leite"
+    },
+    {
+      "case_id": 957,
+      "expected_agent_id": 4,
+      "primary_agent_id": 4,
+      "chosen_agent_ids": [
+        0,
+        3,
+        4
+      ],
+      "execution_plan": [
+        0,
+        3,
+        4
+      ],
+      "routing_bucket": "high",
+      "routing_confidence": 0.86,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 13051.251300028525,
+      "error": "",
+      "question": "Como preparo a amostra de caseína industrial?",
+      "group": "in_68_caracteristicas_sensoriais_preparo_amostras"
+    },
+    {
+      "case_id": 374,
+      "expected_agent_id": 2,
+      "primary_agent_id": 2,
+      "chosen_agent_ids": [
+        0,
+        3,
+        2
+      ],
+      "execution_plan": [
+        0,
+        3,
+        2
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.84,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 20256.874299957417,
+      "error": "",
+      "question": "Por que o kefir é associado a benefícios à saúde na perspectiva probiótica?",
+      "group": "edicao_149_kefir"
+    },
+    {
+      "case_id": 134,
+      "expected_agent_id": 1,
+      "primary_agent_id": 1,
+      "chosen_agent_ids": [
+        0,
+        3,
+        1
+      ],
+      "execution_plan": [
+        0,
+        3,
+        1
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.84,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 7191.204500035383,
+      "error": "",
+      "question": "Quando a janela de amargor passa a ser um problema comercial?",
+      "group": "edicao_164_cultivos_adjuntos_queijos_maturados"
+    },
+    {
+      "case_id": 76,
+      "expected_agent_id": 1,
+      "primary_agent_id": 1,
+      "chosen_agent_ids": [
+        0,
+        3,
+        1
+      ],
+      "execution_plan": [
+        0,
+        3,
+        1
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.84,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 6856.522799935192,
+      "error": "",
+      "question": "Qual tipo de leite é utilizado na produção de cottage?",
+      "group": "edicao_159_160_cottage_ingredientes_naturais"
+    },
+    {
+      "case_id": 1144,
+      "expected_agent_id": 4,
+      "primary_agent_id": 1,
+      "chosen_agent_ids": [
+        0,
+        3,
+        1
+      ],
+      "execution_plan": [
+        0,
+        3,
+        1
+      ],
+      "routing_bucket": "high",
+      "routing_confidence": 0.95,
+      "fallback_used": true,
+      "fallback_attempts": 1,
+      "fallback_trigger": "weak_or_conflicting_evidence",
+      "latency_ms": 24756.124300067313,
+      "error": "",
+      "question": "Se o peso unitário não atingir o mínimo, como devo proceder?",
+      "group": "in_68_recomendacoes_gerais"
+    },
+    {
+      "case_id": 590,
+      "expected_agent_id": 3,
+      "primary_agent_id": 1,
+      "chosen_agent_ids": [
+        0,
+        3,
+        1
+      ],
+      "execution_plan": [
+        0,
+        3,
+        1
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.84,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 13627.603100030683,
+      "error": "",
+      "question": "Quais critérios valem para sobremesa láctea de soro fermentada sem adição?",
+      "group": "instrucao_normativa_72_2020_sobremesa_lactea"
+    },
+    {
+      "case_id": 822,
+      "expected_agent_id": 3,
+      "primary_agent_id": 3,
+      "chosen_agent_ids": [
+        0,
+        3
+      ],
+      "execution_plan": [
+        0,
+        3
+      ],
+      "routing_bucket": "high",
+      "routing_confidence": 0.86,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 9114.6899999585,
+      "error": "",
+      "question": "Estabelecimento sob SIF pode receber produto destinado ao consumo humano sem identificação clara de outro estabelecimento sob SIF?",
+      "group": "riispoa_decreto_9013_2017"
+    },
+    {
+      "case_id": 699,
+      "expected_agent_id": 3,
+      "primary_agent_id": 1,
+      "chosen_agent_ids": [
+        0,
+        3,
+        1
+      ],
+      "execution_plan": [
+        0,
+        3,
+        1
+      ],
+      "routing_bucket": "high",
+      "routing_confidence": 0.95,
+      "fallback_used": true,
+      "fallback_attempts": 1,
+      "fallback_trigger": "weak_or_conflicting_evidence",
+      "latency_ms": 17859.043299918994,
+      "error": "",
+      "question": "Se o ingrediente já é permitido no alimento final, ele pode servir como veículo da preparação enzimática?",
+      "group": "rdc_53_2014_lista_de_enzimas"
+    },
+    {
+      "case_id": 222,
+      "expected_agent_id": 1,
+      "primary_agent_id": 1,
+      "chosen_agent_ids": [
+        0,
+        3,
+        1,
+        5
+      ],
+      "execution_plan": [
+        0,
+        3,
+        1,
+        5
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.74,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 16287.774699972942,
+      "error": "",
+      "question": "Por que ocorrem trincas no fatiamento?",
+      "group": "edicao_170_defeitos_mais_comuns_queijos_parte_2"
+    },
+    {
+      "case_id": 604,
+      "expected_agent_id": 3,
+      "primary_agent_id": 1,
+      "chosen_agent_ids": [
+        0,
+        3,
+        1
+      ],
+      "execution_plan": [
+        0,
+        3,
+        1
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.84,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 18944.335300009698,
+      "error": "",
+      "question": "O que caracteriza o queijo provolone em termos de matéria-prima e processo básico?",
+      "group": "instrucao_normativa_73_2020_provolone"
+    },
+    {
+      "case_id": 573,
+      "expected_agent_id": 3,
+      "primary_agent_id": 6,
+      "chosen_agent_ids": [
+        0,
+        3,
+        6
+      ],
+      "execution_plan": [
+        0,
+        3,
+        6
+      ],
+      "routing_bucket": "high",
+      "routing_confidence": 0.95,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 11939.00150002446,
+      "error": "",
+      "question": "Posso usar gordura vegetal para substituir a gordura láctea da sobremesa?",
+      "group": "instrucao_normativa_72_2020_sobremesa_lactea"
+    },
+    {
+      "case_id": 1150,
+      "expected_agent_id": 4,
+      "primary_agent_id": 3,
+      "chosen_agent_ids": [
+        0,
+        3
+      ],
+      "execution_plan": [
+        0,
+        3
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.72,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 15433.967899996787,
+      "error": "",
+      "question": "O que caracteriza o leite cru em termos de obtenção e condições do animal?",
+      "group": "qualidade_leite"
+    },
+    {
+      "case_id": 880,
+      "expected_agent_id": 4,
+      "primary_agent_id": 3,
+      "chosen_agent_ids": [
+        0,
+        3
+      ],
+      "execution_plan": [
+        0,
+        3
+      ],
+      "routing_bucket": "high",
+      "routing_confidence": 0.95,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 7628.436099970713,
+      "error": "",
+      "question": "Quais termos também podem ser usados como sinônimos de absorbância?",
+      "group": "in_68_metodos_analiticos_oficiais_fisico_quimicos_controle_leite"
+    },
+    {
+      "case_id": 514,
+      "expected_agent_id": 3,
+      "primary_agent_id": 2,
+      "chosen_agent_ids": [
+        0,
+        3,
+        2
+      ],
+      "execution_plan": [
+        0,
+        3,
+        2
+      ],
+      "routing_bucket": "high",
+      "routing_confidence": 0.95,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 16886.96799997706,
+      "error": "",
+      "question": "Posso usar cultivos subsidiários ou outros microrganismos na fabricação?",
+      "group": "instrucao_normativa_66_2020_minas_padrao"
+    },
+    {
+      "case_id": 983,
+      "expected_agent_id": 4,
+      "primary_agent_id": 3,
+      "chosen_agent_ids": [
+        0,
+        3,
+        1
+      ],
+      "execution_plan": [
+        0,
+        3,
+        1
+      ],
+      "routing_bucket": "high",
+      "routing_confidence": 0.95,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 19409.196999971755,
+      "error": "",
+      "question": "Qual a diferença de preparo entre minas padrão e minas frescal?",
+      "group": "in_68_caracteristicas_sensoriais_preparo_amostras"
+    },
+    {
+      "case_id": 849,
+      "expected_agent_id": 3,
+      "primary_agent_id": 3,
+      "chosen_agent_ids": [
+        0,
+        3
+      ],
+      "execution_plan": [
+        0,
+        3
+      ],
+      "routing_bucket": "high",
+      "routing_confidence": 0.95,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 9128.524899948388,
+      "error": "",
+      "question": "Quais são as condições básicas para autorizar importação de produto de origem animal?",
+      "group": "riispoa_decreto_9013_2017"
+    },
+    {
+      "case_id": 150,
+      "expected_agent_id": 1,
+      "primary_agent_id": 1,
+      "chosen_agent_ids": [
+        0,
+        3,
+        1
+      ],
+      "execution_plan": [
+        0,
+        3,
+        1
+      ],
+      "routing_bucket": "high",
+      "routing_confidence": 0.92,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 10657.37969998736,
+      "error": "",
+      "question": "Quando o mercado valoriza mais a matéria gorda, o que passa a ser interessante avaliar na indústria de queijos?",
+      "group": "edicao_166_rentabilidade_producao_queijos"
+    },
+    {
+      "case_id": 418,
+      "expected_agent_id": 2,
+      "primary_agent_id": 2,
+      "chosen_agent_ids": [
+        0,
+        3,
+        2
+      ],
+      "execution_plan": [
+        0,
+        3,
+        2
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.84,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 13521.588900010101,
+      "error": "",
+      "question": "Que desvio físico adicional pode ser causado por Lactobacillus contaminante?",
+      "group": "edicao_167_nslab_impactos_qualidade_iogurte"
+    },
+    {
+      "case_id": 92,
+      "expected_agent_id": 1,
+      "primary_agent_id": 0,
+      "chosen_agent_ids": [],
+      "execution_plan": [],
+      "routing_bucket": "high",
+      "routing_confidence": 0.99,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 3039.7930000908673,
+      "error": "",
+      "question": "Qual alternativa para evitar CO₂ excessivo gerado por cultivos LD?",
+      "group": "edicao_159_160_cottage_ingredientes_naturais"
+    },
+    {
+      "case_id": 491,
+      "expected_agent_id": 3,
+      "primary_agent_id": 1,
+      "chosen_agent_ids": [
+        0,
+        3,
+        1
+      ],
+      "execution_plan": [
+        0,
+        3,
+        1
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.84,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 8475.846900022589,
+      "error": "",
+      "question": "Ricota pode conter partículas estranhas ou alguma impureza sem impacto sensorial?",
+      "group": "instrucao_normativa_65_2020_ricota"
+    },
+    {
+      "case_id": 20,
+      "expected_agent_id": 0,
+      "primary_agent_id": 0,
+      "chosen_agent_ids": [
+        0,
+        3
+      ],
+      "execution_plan": [
+        0,
+        3,
+        1
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.7,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 11100.18609999679,
+      "error": "",
+      "question": "Existe no mercado algum similar à quimosina de terceira geração além da Novonesis?",
+      "group": "verdades_absolutas_rag"
+    },
+    {
+      "case_id": 622,
+      "expected_agent_id": 3,
+      "primary_agent_id": 3,
+      "chosen_agent_ids": [
+        0,
+        3,
+        1
+      ],
+      "execution_plan": [
+        0,
+        3,
+        1
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.84,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 18025.642900029197,
+      "error": "",
+      "question": "Qual o tempo mínimo de estabilização do provolone fresco?",
+      "group": "instrucao_normativa_73_2020_provolone"
+    },
+    {
+      "case_id": 442,
+      "expected_agent_id": 2,
+      "primary_agent_id": 4,
+      "chosen_agent_ids": [
+        0,
+        3,
+        4
+      ],
+      "execution_plan": [
+        0,
+        3,
+        4
+      ],
+      "routing_bucket": "high",
+      "routing_confidence": 0.95,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 11823.358599911444,
+      "error": "",
+      "question": "Qual é a faixa de pH natural do leite em que as micelas de caseína permanecem estáveis?",
+      "group": "edicao_172_produtos_lacteos_frescos_biociencia_biossolucoes"
+    },
+    {
+      "case_id": 332,
+      "expected_agent_id": 2,
+      "primary_agent_id": 2,
+      "chosen_agent_ids": [
+        0,
+        3,
+        2
+      ],
+      "execution_plan": [
+        0,
+        3,
+        2
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.84,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 16064.25230007153,
+      "error": "",
+      "question": "Como se diferenciam Skyr e grego em termos de gordura e apelo nutricional?",
+      "group": "edicao_144_skyr"
+    },
+    {
+      "case_id": 709,
+      "expected_agent_id": 3,
+      "primary_agent_id": 0,
+      "chosen_agent_ids": [
+        0,
+        3
+      ],
+      "execution_plan": [
+        0,
+        3
+      ],
+      "routing_bucket": "high",
+      "routing_confidence": 0.95,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 19352.63280000072,
+      "error": "",
+      "question": "Protease microbiana pode entrar? Cite fontes que a lista aceita.",
+      "group": "rdc_53_2014_lista_de_enzimas"
+    },
+    {
+      "case_id": 999,
+      "expected_agent_id": 4,
+      "primary_agent_id": 4,
+      "chosen_agent_ids": [
+        0,
+        3,
+        4,
+        2
+      ],
+      "execution_plan": [
+        0,
+        3,
+        4,
+        2
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.74,
+      "fallback_used": true,
+      "fallback_attempts": 1,
+      "fallback_trigger": "weak_or_conflicting_evidence",
+      "latency_ms": 29492.406399920583,
+      "error": "",
+      "question": "Como realizar o teste de ácido sórbico/sorbatos?",
+      "group": "in_68_metodos_qualitativos"
+    },
+    {
+      "case_id": 901,
+      "expected_agent_id": 4,
+      "primary_agent_id": 0,
+      "chosen_agent_ids": [],
+      "execution_plan": [],
+      "routing_bucket": "high",
+      "routing_confidence": 0.99,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 5149.275599978864,
+      "error": "",
+      "question": "Como faço a solução de azul de metileno a 1%?",
+      "group": "in_68_solucoes_indicadora"
+    },
+    {
+      "case_id": 596,
+      "expected_agent_id": 3,
+      "primary_agent_id": 3,
+      "chosen_agent_ids": [
+        0,
+        3
+      ],
+      "execution_plan": [
+        0,
+        3
+      ],
+      "routing_bucket": "high",
+      "routing_confidence": 0.95,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 11884.768800111488,
+      "error": "",
+      "question": "Qual é a temperatura máxima de conservação para sobremesa láctea refrigerada?",
+      "group": "instrucao_normativa_72_2020_sobremesa_lactea"
+    },
+    {
+      "case_id": 635,
+      "expected_agent_id": 3,
+      "primary_agent_id": 1,
+      "chosen_agent_ids": [
+        0,
+        3,
+        1
+      ],
+      "execution_plan": [
+        0,
+        3,
+        1
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.84,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 21353.68699999526,
+      "error": "",
+      "question": "Como deve ser rotulado o provolone sem maturação e sem defumação?",
+      "group": "instrucao_normativa_73_2020_provolone"
+    },
+    {
+      "case_id": 917,
+      "expected_agent_id": 4,
+      "primary_agent_id": 4,
+      "chosen_agent_ids": [
+        0,
+        3,
+        4
+      ],
+      "execution_plan": [
+        0,
+        3,
+        4
+      ],
+      "routing_bucket": "high",
+      "routing_confidence": 0.86,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 9550.41170003824,
+      "error": "",
+      "question": "Qual a fórmula do fator de correção do HCl com Tris?",
+      "group": "in_68_solucoes_padroes"
+    },
+    {
+      "case_id": 86,
+      "expected_agent_id": 1,
+      "primary_agent_id": 1,
+      "chosen_agent_ids": [
+        0,
+        3,
+        1
+      ],
+      "execution_plan": [
+        0,
+        3,
+        1
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.84,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 12340.159800020047,
+      "error": "",
+      "question": "Qual o pH da água de lavagem para manter a estabilidade da coalhada?",
+      "group": "edicao_159_160_cottage_ingredientes_naturais"
+    },
+    {
+      "case_id": 78,
+      "expected_agent_id": 1,
+      "primary_agent_id": 3,
+      "chosen_agent_ids": [
+        0,
+        3
+      ],
+      "execution_plan": [
+        0,
+        3
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.72,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 13722.958900034428,
+      "error": "",
+      "question": "Posso aplicar tratamento térmico adicional antes da pasteurização do leite?",
+      "group": "edicao_159_160_cottage_ingredientes_naturais"
+    },
+    {
+      "case_id": 61,
+      "expected_agent_id": 1,
+      "primary_agent_id": 1,
+      "chosen_agent_ids": [
+        0,
+        3,
+        1
+      ],
+      "execution_plan": [
+        0,
+        3,
+        1
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.84,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 14073.548799962737,
+      "error": "",
+      "question": "Qual combinação de cultivos é usada na tecnologia overnight para reduzir browning?",
+      "group": "edicao_152_browning_pizza"
+    },
+    {
+      "case_id": 871,
+      "expected_agent_id": 4,
+      "primary_agent_id": 4,
+      "chosen_agent_ids": [
+        0,
+        3,
+        4
+      ],
+      "execution_plan": [
+        0,
+        3,
+        4
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.84,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 15817.295199958608,
+      "error": "",
+      "question": "Na rotina do laboratório, quando a metodologia fala só em água, que tipo de água devo usar?",
+      "group": "in_68_metodos_analiticos_oficiais_fisico_quimicos_controle_leite"
+    },
+    {
+      "case_id": 419,
+      "expected_agent_id": 2,
+      "primary_agent_id": 2,
+      "chosen_agent_ids": [
+        0,
+        3,
+        2
+      ],
+      "execution_plan": [
+        0,
+        3,
+        2
+      ],
+      "routing_bucket": "high",
+      "routing_confidence": 0.92,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 13394.562400062568,
+      "error": "",
+      "question": "Quais compostos podem ser produzidos por Leuconostoc a partir do citrato?",
+      "group": "edicao_167_nslab_impactos_qualidade_iogurte"
+    },
+    {
+      "case_id": 53,
+      "expected_agent_id": 1,
+      "primary_agent_id": 1,
+      "chosen_agent_ids": [
+        0,
+        3,
+        1
+      ],
+      "execution_plan": [
+        0,
+        3,
+        1
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.84,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 15409.666999941692,
+      "error": "",
+      "question": "Por que meu queijo está escurecendo demais no forno a lenha?",
+      "group": "edicao_152_browning_pizza"
+    },
+    {
+      "case_id": 190,
+      "expected_agent_id": 1,
+      "primary_agent_id": 1,
+      "chosen_agent_ids": [
+        0,
+        3,
+        1
+      ],
+      "execution_plan": [
+        0,
+        3,
+        1
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.84,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 13165.657000034116,
+      "error": "",
+      "question": "Qual é o limiar prático mais importante para prevenir estufamento precoce por coliformes?",
+      "group": "edicao_169_defeitos_mais_comuns_queijos_parte_1"
+    },
+    {
+      "case_id": 245,
+      "expected_agent_id": 2,
+      "primary_agent_id": 2,
+      "chosen_agent_ids": [
+        0,
+        3,
+        2
+      ],
+      "execution_plan": [
+        0,
+        3,
+        2
+      ],
+      "routing_bucket": "medium",
+      "routing_confidence": 0.84,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 15388.27710004989,
+      "error": "",
+      "question": "Qual critério prático pode ser usado para diagnosticar pós-acidificação no ponto de venda?",
+      "group": "edicao_132_pos_acidificacao_iogurtes_leites_fermentados"
+    },
+    {
+      "case_id": 1055,
+      "expected_agent_id": 4,
+      "primary_agent_id": 4,
+      "chosen_agent_ids": [
+        0,
+        3,
+        4
+      ],
+      "execution_plan": [
+        0,
+        3,
+        4
+      ],
+      "routing_bucket": "high",
+      "routing_confidence": 0.86,
+      "fallback_used": false,
+      "fallback_attempts": 0,
+      "fallback_trigger": "",
+      "latency_ms": 11774.820900056511,
+      "error": "",
+      "question": "No método B de leite desidratado, qual volume de fenolftaleína devo adicionar?",
+      "group": "in_68_metodos_quantitativos"
+    }
+  ],
+  "wall_time_ms": 1270456.4090999775
+}
