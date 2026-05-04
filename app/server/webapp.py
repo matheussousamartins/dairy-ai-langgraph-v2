@@ -72,6 +72,7 @@ from app.db.connection import init_pools, close_pools
 from app.db.memory import load_memory, save_chat_turn, save_routing_log
 from app.db.ingestion_jobs import create_ingestion_job, get_ingestion_job, update_ingestion_job
 from app.rag.parsers import convert_to_markdown, detect_doc_type, SUPPORTED_EXTENSIONS
+from app.rag.clarification import check_needs_clarification
 from app.agents.base_agent import get_agent_graph, get_all_agent_graphs
 from app.agents.orchestrator import get_orchestrator_graph
 from app.agents.agent_config import get_agent_by_id
@@ -401,12 +402,13 @@ def _build_orchestrator_input_messages(
     session_id: str,
     message: str,
     user_profile: Optional[Dict[str, Any]],
+    preloaded_history: Optional[list] = None,
 ) -> list:
     current_message = _inject_user_profile(message, user_profile)
     if not _looks_like_context_dependent_followup(message):
         return [HumanMessage(content=current_message)]
 
-    history = _load_history_safe(session_id)
+    history = preloaded_history if preloaded_history is not None else _load_history_safe(session_id)
     context_lines = _select_orchestrator_context_lines(history)
     if not context_lines:
         return [HumanMessage(content=current_message)]
@@ -470,6 +472,46 @@ def _log_server_error(tag: str, exc: Exception) -> None:
 def _backend_failure_response(message: str, status_code: int = 500) -> PlainTextResponse:
     """Resposta simples para facilitar o consumo pelo proxy/frontend."""
     return PlainTextResponse(message, status_code=status_code)
+
+
+def _clarification_stream_response(
+    question: str,
+    session_id: str,
+    user_message: str,
+    elapsed_ms: int,
+) -> StreamingResponse:
+    """Retorna um StreamingResponse SSE com a pergunta de clarificação.
+
+    Emite os eventos padrão do protocolo SSE (chunk + final) para que o
+    frontend e o mobile consumam a clarificação exatamente como uma resposta
+    normal — sem nenhuma mudança no cliente.
+
+    O campo extra ``"clarification": true`` no evento ``final`` permite que
+    clientes avançados diferenciem e ajustem a UI (ex: destacar que é uma
+    pergunta, não uma resposta), mas é ignorado por clientes que não o conhecem.
+
+    Persiste o turno (user_message + question) no histórico em background,
+    para que a próxima mensagem do usuário (a resposta à clarificação) seja
+    processada com contexto completo.
+    """
+    async def _gen():
+        yield f"data: {json.dumps({'event': 'chunk', 'text': question}, ensure_ascii=False)}\n\n"
+        asyncio.create_task(_bg_save_chat_turn(
+            session_id, 0, "Assistente Geral", user_message, question, elapsed_ms
+        ))
+        yield (
+            f"data: {json.dumps({'event': 'final', 'agent_id': 0, 'agent_name': 'Assistente Geral', 'clarification': True}, ensure_ascii=False)}\n\n"
+        )
+
+    return StreamingResponse(
+        _gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 def _safe_int_list(value: Any) -> list[int]:
@@ -837,6 +879,22 @@ async def chat_agent_stream(
 
     agent_name = agent_config["name"]
     history = await run_in_threadpool(_load_history_safe, session_id)
+
+    # Clarificação estruturada pré-pipeline:
+    # Verifica se a query é vaga demais antes de invocar o grafo.
+    # Fail-safe garantido — nunca bloqueia em caso de falha do LLM.
+    clarification = await run_in_threadpool(
+        check_needs_clarification,
+        request.message,
+        history,
+        request.user_profile,
+    )
+    if clarification.needs_clarification and clarification.question:
+        elapsed_ms = int((time.time() - start_time) * 1000)
+        return _clarification_stream_response(
+            clarification.question, session_id, request.message, elapsed_ms
+        )
+
     messages = _history_to_messages(history)
     messages.append(
         HumanMessage(
@@ -947,12 +1005,32 @@ async def chat_orchestrator_stream(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    # Mesmo racional do endpoint não-streaming: memória curta só entra quando
-    # a mensagem atual parece depender do contexto anterior.
+    # Carrega histórico UMA VEZ — reutilizado na clarificação e na injeção de contexto,
+    # evitando dupla leitura do banco para o mesmo request.
+    history = await run_in_threadpool(_load_history_safe, session_id)
+
+    # Clarificação estruturada pré-pipeline:
+    # Intercepta queries vagas antes de acionar classificador + agentes + consolidação.
+    # Fail-safe garantido — nunca bloqueia em caso de falha do LLM de clarificação.
+    clarification = await run_in_threadpool(
+        check_needs_clarification,
+        request.message,
+        history,
+        request.user_profile,
+    )
+    if clarification.needs_clarification and clarification.question:
+        elapsed_ms = int((time.time() - start_time) * 1000)
+        return _clarification_stream_response(
+            clarification.question, session_id, request.message, elapsed_ms
+        )
+
+    # Memória curta só entra quando a mensagem parece depender do contexto anterior.
+    # Passa o histórico já carregado para evitar segunda leitura.
     messages = _build_orchestrator_input_messages(
         session_id=session_id,
         message=request.message,
         user_profile=request.user_profile,
+        preloaded_history=history,
     )
 
     graph = get_orchestrator_graph()

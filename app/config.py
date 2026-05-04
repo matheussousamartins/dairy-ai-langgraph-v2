@@ -291,6 +291,41 @@ CONTEXTUAL_QUERY_REWRITE_TIMEOUT_SEC = float(
 )
 
 
+# ============================================================
+# CLARIFICATION — clarificação estruturada pré-RAG
+# ============================================================
+# Intercepta queries tão vagas que o RAG dificilmente retornaria algo útil
+# e retorna uma única pergunta de esclarecimento ao usuário ANTES de acionar
+# o pipeline completo (classificador → agentes → consolidação).
+#
+# Filosofia: conservadorismo máximo. O LLM recebe instruções explícitas para
+# não perguntar na dúvida — uma resposta imperfeita do RAG é sempre preferível
+# a interromper o fluxo do usuário com uma pergunta desnecessária.
+#
+# Proteções embutidas:
+#   - Heurística pré-filtro sem LLM: queries com termos técnicos de domínio
+#     ou maiores que CLARIFICATION_MAX_QUERY_LEN_TO_SKIP passam direto.
+#   - Loop guard: se o último turno do assistente foi clarificação, não pede outra.
+#   - Fail-safe: qualquer exceção retorna needs_clarification=False.
+CLARIFICATION_ENABLED = (
+    os.getenv("CLARIFICATION_ENABLED", "true").strip().lower() == "true"
+)
+# Modelo para a chamada de clarificação. gpt-4o-mini é suficiente:
+# a decisão é binária e o prompt é curto.
+CLARIFICATION_MODEL = os.getenv("CLARIFICATION_MODEL", "gpt-4o-mini")
+# Queries maiores que este limite (chars) são consideradas específicas o bastante
+# e nunca chegam ao LLM de clarificação. Ajuste conservador: 180 chars cobre
+# perguntas técnicas completas sem ser tão restritivo.
+CLARIFICATION_MAX_QUERY_LEN_TO_SKIP = int(
+    os.getenv("CLARIFICATION_MAX_QUERY_LEN_TO_SKIP", "180")
+)
+# Timeout da chamada ao LLM de clarificação (segundos).
+# Em caso de timeout, retorna needs_clarification=False (fail-safe).
+CLARIFICATION_TIMEOUT_SEC = float(
+    os.getenv("CLARIFICATION_TIMEOUT_SEC", "4.0")
+)
+
+
 # Filtros de qualidade no retrieval (evita chunk lixo tipo "." ou tabela quebrada)
 RAG_MIN_CHUNK_CHARS = int(os.getenv("RAG_MIN_CHUNK_CHARS", "60"))
 RAG_MIN_ALNUM_RATIO = float(os.getenv("RAG_MIN_ALNUM_RATIO", "0.25"))
