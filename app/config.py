@@ -253,6 +253,44 @@ QUERY_REWRITE_MODEL = os.getenv("QUERY_REWRITE_MODEL", "gpt-4o-mini")
 # Quantidade de variacoes alem da query original.
 QUERY_REWRITE_VARIANTS = int(os.getenv("QUERY_REWRITE_VARIANTS", "2"))
 
+
+# ============================================================
+# CONTEXTUAL RAG QUERY REWRITING — resolução de anáfora
+# ============================================================
+# Quando o usuário faz follow-up com referências implícitas ("e quanto ao pH?",
+# "isso muda para mussarela?"), reescreve a query em versão standalone *antes*
+# do retrieval RAG. Isso garante que o vetor de busca carregue o contexto correto,
+# não apenas o pronome solto.
+#
+# Trade-off: +1 chamada LLM (~0.5–1.2 s) exclusivamente em queries curtas/anafóricas.
+# Queries longas e autossuficientes nunca acionam o rewrite (CONTEXTUAL_QUERY_REWRITE_MAX_QUERY_LEN).
+#
+# Recomendação: manter ENABLED=true em produção — o ganho de qualidade no retrieval
+# de follow-ups supera amplamente o custo do modelo mais barato (gpt-4o-mini).
+CONTEXTUAL_QUERY_REWRITE_ENABLED = (
+    os.getenv("CONTEXTUAL_QUERY_REWRITE_ENABLED", "true").strip().lower() == "true"
+)
+# Modelo para a chamada de contextualização. gpt-4o-mini é suficiente:
+# a tarefa é simples (reescrever 1 frase), não requer raciocínio profundo.
+CONTEXTUAL_QUERY_REWRITE_MODEL = os.getenv("CONTEXTUAL_QUERY_REWRITE_MODEL", "gpt-4o-mini")
+# Quantos turnos recentes de conversa incluir no contexto enviado ao LLM.
+# 3 turnos (= 6 mensagens) cobre 95% dos casos de follow-up em cadeia.
+# Aumentar consome mais tokens sem ganho proporcional.
+CONTEXTUAL_QUERY_REWRITE_MAX_HISTORY_TURNS = int(
+    os.getenv("CONTEXTUAL_QUERY_REWRITE_MAX_HISTORY_TURNS", "3")
+)
+# Queries maiores que este limite (em chars) são consideradas autossuficientes
+# e passam direto para o RAG sem reescrita. Evita custo em perguntas completas.
+CONTEXTUAL_QUERY_REWRITE_MAX_QUERY_LEN = int(
+    os.getenv("CONTEXTUAL_QUERY_REWRITE_MAX_QUERY_LEN", "120")
+)
+# Timeout da chamada ao LLM de contextualização (segundos).
+# Em caso de timeout, retorna a query original sem modificação (fail-safe).
+CONTEXTUAL_QUERY_REWRITE_TIMEOUT_SEC = float(
+    os.getenv("CONTEXTUAL_QUERY_REWRITE_TIMEOUT_SEC", "5.0")
+)
+
+
 # Filtros de qualidade no retrieval (evita chunk lixo tipo "." ou tabela quebrada)
 RAG_MIN_CHUNK_CHARS = int(os.getenv("RAG_MIN_CHUNK_CHARS", "60"))
 RAG_MIN_ALNUM_RATIO = float(os.getenv("RAG_MIN_ALNUM_RATIO", "0.25"))

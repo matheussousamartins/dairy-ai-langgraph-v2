@@ -82,12 +82,18 @@ from app.config import (
     RAG_SECOND_PASS_USE_QUERY_REWRITE,
     RERANKER,
     RERANK_CANDIDATES,
+    CONTEXTUAL_QUERY_REWRITE_ENABLED,
+    CONTEXTUAL_QUERY_REWRITE_MODEL,
+    CONTEXTUAL_QUERY_REWRITE_MAX_HISTORY_TURNS,
+    CONTEXTUAL_QUERY_REWRITE_MAX_QUERY_LEN,
+    CONTEXTUAL_QUERY_REWRITE_TIMEOUT_SEC,
 )
 from app.db.connection import get_supabase_conn
 
 _embeddings_model = None
 _hyde_model = None
 _query_rewrite_model = None
+_contextual_rewrite_model = None
 try:
     _hybrid_workers = int(os.getenv("RAG_HYBRID_WORKERS", "8"))
 except ValueError:
@@ -232,6 +238,18 @@ def _get_query_rewrite_model() -> ChatOpenAI:
     return _query_rewrite_model
 
 
+def _get_contextual_rewrite_model() -> ChatOpenAI:
+    global _contextual_rewrite_model
+    if _contextual_rewrite_model is None:
+        _contextual_rewrite_model = ChatOpenAI(
+            model=CONTEXTUAL_QUERY_REWRITE_MODEL,
+            temperature=0,
+            max_tokens=150,
+            timeout=CONTEXTUAL_QUERY_REWRITE_TIMEOUT_SEC,
+        )
+    return _contextual_rewrite_model
+
+
 def generate_query_rewrites(query: str, variants: int) -> List[str]:
     """Gera variacoes tecnicas da query mantendo intencao e dominio.
 
@@ -285,6 +303,191 @@ def generate_query_rewrites(query: str, variants: int) -> List[str]:
             break
 
     return out or [base]
+
+
+# ---------------------------------------------------------------------------
+# Tokens e prefixos que indicam referência implícita ao contexto anterior.
+# Usados pela heurística de detecção — não precisam ser exaustivos; basta
+# capturar os padrões mais comuns do português técnico de laticínios.
+# ---------------------------------------------------------------------------
+_ANAPHORA_TOKENS: frozenset[str] = frozenset({
+    "isso", "isto", "esse", "essa", "esses", "essas",
+    "aquele", "aquela", "aqueles", "aquelas",
+    "anterior", "anteriores",
+    "mencionado", "mencionada", "mencionados", "mencionadas",
+    "citado", "citada", "citados", "citadas",
+    "descrito", "descrita", "descritos", "descritas",
+    "referido", "referida",
+})
+
+_FOLLOWUP_PREFIXES: tuple[str, ...] = (
+    "e no caso",
+    "e quanto",
+    "e para ",
+    "e se ",
+    "e no ",
+    "e a ",
+    "e o ",
+    "e os ",
+    "e as ",
+    "agora, ",
+    "agora que",
+    "então, ",
+    "entao, ",
+    "nesse caso",
+    "neste caso",
+    "sobre isso",
+    "sobre o mesmo",
+    "compare ",
+    "comparando",
+    "qual a diferença",
+    "qual é a diferença",
+    "me explique mais",
+    "pode detalhar",
+    "pode aprofundar",
+    "e quanto à",
+    "e quanto ao",
+)
+
+
+def _needs_contextual_rewrite(query: str, has_history: bool) -> bool:
+    """Heurística leve: decide se vale chamar o LLM para contextualizar a query.
+
+    Retorna True apenas quando há fortes sinais de referência implícita:
+    pronomes demonstrativos/anafóricos, prefixos de follow-up clássicos, ou
+    queries extremamente curtas (≤ 5 palavras) que dificilmente são autossuficientes.
+
+    Nunca retorna True se não houver histórico — sem contexto, não há o que resolver.
+    """
+    if not has_history:
+        return False
+    cleaned = re.sub(r"\s+", " ", (query or "").strip()).lower()
+    if not cleaned:
+        return False
+    # Queries longas geralmente são formulações completas — não reescrever.
+    if len(cleaned) > CONTEXTUAL_QUERY_REWRITE_MAX_QUERY_LEN:
+        return False
+    # Pronomes / demonstrativos anafóricos
+    tokens = set(re.findall(r"[^\W_]+", cleaned, flags=re.UNICODE))
+    if tokens & _ANAPHORA_TOKENS:
+        return True
+    # Prefixos canônicos de follow-up
+    if any(cleaned.startswith(p) for p in _FOLLOWUP_PREFIXES):
+        return True
+    # Query curta demais para ser autossuficiente
+    if len(cleaned.split()) <= 5:
+        return True
+    return False
+
+
+def contextualize_query_for_rag(
+    current_query: str,
+    context_lines: List[str],
+) -> str:
+    """Resolve anáfora e referências implícitas em queries de follow-up para RAG.
+
+    Problema que resolve:
+        Usuário pergunta "E quanto ao pH?" após discutir filagem de mussarela.
+        Sem contextualização, o RAG busca apenas "pH" — retrieval pobre.
+        Com contextualização, a query vira "Qual o pH ideal na filagem da
+        mussarela?" — retrieval cirúrgico.
+
+    Args:
+        current_query:
+            Query atual do usuário, possivelmente anafórica ou incompleta.
+        context_lines:
+            Linhas pré-formatadas da conversa recente, no formato produzido
+            por _select_orchestrator_context_lines():
+            ["Usuario: <texto>", "Dairy AI: <texto>", ...].
+            Tipicamente as últimas 4–8 linhas (2–4 turnos).
+
+    Returns:
+        Query standalone pronta para RAG.
+        Retorna ``current_query`` inalterada quando:
+        - Feature desabilitada (CONTEXTUAL_QUERY_REWRITE_ENABLED=false)
+        - Histórico vazio ou query sem sinais anafóricos
+        - LLM retorna resposta inválida, muito longa, ou levanta exceção
+        - Timeout atingido
+        Nenhuma exceção propaga para o chamador (fail-safe garantido).
+
+    Performance:
+        A heurística ``_needs_contextual_rewrite`` filtra queries longas e
+        autossuficientes antes de qualquer chamada LLM.
+        Latência adicional apenas para queries curtas/anafóricas: ~0.5–1.2 s.
+    """
+    if not CONTEXTUAL_QUERY_REWRITE_ENABLED:
+        return current_query
+
+    query_clean = re.sub(r"\s+", " ", (current_query or "").strip())
+    if not query_clean:
+        return current_query
+
+    if not context_lines or not _needs_contextual_rewrite(query_clean, bool(context_lines)):
+        return query_clean
+
+    # Limita o histórico às últimas N turns para manter o prompt enxuto e
+    # relevante — turnos muito antigos geralmente não ajudam na resolução
+    # de anáfora do turno atual.
+    max_lines = CONTEXTUAL_QUERY_REWRITE_MAX_HISTORY_TURNS * 2
+    recent_lines = context_lines[-max_lines:]
+    context_text = "\n".join(recent_lines)
+
+    prompt = (
+        "Você é especialista em tecnologia de laticínios.\n"
+        "Dado o trecho de conversa abaixo e uma pergunta de follow-up, reescreva "
+        "a pergunta de forma completamente autossuficiente para busca em base de "
+        "conhecimento técnica — como se fosse a primeira pergunta da conversa.\n\n"
+        "Regras obrigatórias:\n"
+        "- Resolva referências implícitas ('isso', 'esse pH', 'o anterior', "
+        "'e quanto a') incorporando o contexto necessário da conversa.\n"
+        "- Preserve todos os termos técnicos exatos (nomes de queijos, parâmetros, "
+        "processos, normas).\n"
+        "- Retorne exatamente 1 frase curta e direta — sem prefixos, sem aspas, "
+        "sem explicações.\n"
+        "- NÃO responda à pergunta — apenas reescreva.\n"
+        "- Se a pergunta já for autossuficiente, retorne-a exatamente como está.\n\n"
+        f"Conversa recente:\n{context_text}\n\n"
+        f"Pergunta de follow-up: {query_clean}\n"
+        "Pergunta reescrita:"
+    )
+
+    try:
+        llm = _get_contextual_rewrite_model()
+        resp = llm.invoke(prompt)
+        rewritten = re.sub(r"\s+", " ", (resp.content or "").strip())
+
+        # Sanidade: a resposta não pode ser vazia nem longa demais
+        # (indica que o LLM gerou uma resposta em vez de reescrever a query).
+        if not rewritten or len(rewritten) > 300:
+            _log.warning(
+                "contextualize_query_for_rag: resposta inválida (len=%d), "
+                "usando query original.",
+                len(rewritten),
+            )
+            return query_clean
+
+        # Remove artefatos comuns: aspas, numeração inicial, dois-pontos residuais.
+        rewritten = re.sub(r'^["\'“”`]|["\'“”`]$', "", rewritten).strip()
+        rewritten = re.sub(r"^\d+[\.\)]\s*", "", rewritten).strip()
+        rewritten = rewritten.lstrip(":").strip()
+
+        if not rewritten:
+            return query_clean
+
+        _log.info(
+            "contextualize_query_for_rag: '%s' → '%s'",
+            query_clean,
+            rewritten,
+        )
+        return rewritten
+
+    except Exception as exc:
+        _log.warning(
+            "contextualize_query_for_rag: falha ao contextualizar "
+            "(usando query original): %s",
+            exc,
+        )
+        return query_clean
 
 
 def _fuse_results_rrf(result_lists: List[List[Dict[str, Any]]], k: int) -> List[Dict[str, Any]]:

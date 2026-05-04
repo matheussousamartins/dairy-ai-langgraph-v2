@@ -72,10 +72,11 @@ from app.config import (
     RAG_EARLY_SKIP_WEAK_MIN_QUERY_KEYWORDS,
     RAG_EARLY_SKIP_WEAK_MIN_TOP_KEYWORD_HITS,
     RAG_EARLY_SKIP_WEAK_HYBRID_MAX_SCORE,
+    CONTEXTUAL_QUERY_REWRITE_ENABLED,
 )
 from app.agents.agent_config import get_agent_by_id, get_search_config, AGENTS
 from app.agents.prompts import get_agent_prompt
-from app.rag.search import create_kb_search_tool
+from app.rag.search import create_kb_search_tool, contextualize_query_for_rag
 from app.tools.calculations import get_calculation_tools
 
 
@@ -223,22 +224,58 @@ def _extract_current_user_segment(text: str) -> str:
 
 
 def _build_contextual_search_query(text: str) -> str:
+    """Constrói a query de busca RAG a partir da mensagem do usuário.
+
+    Quando a mensagem contém um bloco de contexto histórico (inserido por
+    _build_orchestrator_input_messages), duas estratégias são possíveis:
+
+    1. LLM-based (CONTEXTUAL_QUERY_REWRITE_ENABLED=true — padrão):
+       Chama contextualize_query_for_rag() para resolver anáfora e referências
+       implícitas antes do retrieval. Ex.:
+           "E quanto ao pH?"  →  "Qual o pH ideal na filagem da mussarela?"
+       Isso garante que o vetor de busca carregue o contexto semântico correto,
+       não apenas o pronome solto.
+
+    2. Fallback por concatenação (feature desabilitada ou sem histórico):
+       Une os últimos snippets do usuário com " | " — comportamento legado.
+       Adequado como safety net mas impreciso para anáfora.
+    """
     current = _strip_profile_suffix(_extract_current_user_segment(text)).strip()
     if not current:
         return ""
 
+    # Sem bloco de contexto histórico: query autossuficiente, usa direto.
     if "[Contexto recente da conversa]" not in text or "[Pergunta atual]" not in text:
         return current
 
+    # Extrai o bloco de contexto entre os marcadores.
     context_block = text.split("[Contexto recente da conversa]", 1)[1]
     context_block = context_block.split("[Pergunta atual]", 1)[0]
 
-    user_snippets: List[str] = []
+    # Coleta todas as linhas de conversa (usuário e assistente) preservando
+    # a ordem e o prefixo de papel — o LLM usa ambos para resolver anáfora.
+    context_lines: List[str] = []
     for raw_line in context_block.splitlines():
         line = raw_line.strip()
+        if not line:
+            continue
         line_norm = unicodedata.normalize("NFKD", line)
-        line_norm = "".join(ch for ch in line_norm if not unicodedata.combining(ch))
-        line_norm = line_norm.lower()
+        line_norm = "".join(ch for ch in line_norm if not unicodedata.combining(ch)).lower()
+        if line_norm.startswith("usuario:") or line_norm.startswith("dairy ai:"):
+            context_lines.append(line)
+
+    if CONTEXTUAL_QUERY_REWRITE_ENABLED and context_lines:
+        # Caminho principal: reescrita semântica via LLM.
+        # contextualize_query_for_rag() garante fail-safe: retorna current
+        # sem modificação em caso de falha, timeout ou query autossuficiente.
+        return contextualize_query_for_rag(current, context_lines)
+
+    # Fallback: concatenação de keywords por " | " (comportamento pré-existente).
+    # Acionado apenas quando CONTEXTUAL_QUERY_REWRITE_ENABLED=false ou sem linhas.
+    user_snippets: List[str] = []
+    for line in context_lines:
+        line_norm = unicodedata.normalize("NFKD", line)
+        line_norm = "".join(ch for ch in line_norm if not unicodedata.combining(ch)).lower()
         if not line_norm.startswith("usuario:"):
             continue
         snippet = line.split(":", 1)[1].strip()
