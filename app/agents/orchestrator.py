@@ -926,9 +926,7 @@ REGRAS DE DESEMPATE (OBRIGATÓRIAS):
 - Se a pergunta for de padronização de termo/glossário ("qual termo usar", "significado esperado"),
   priorize [0,3] e evite especialistas como primários.
 - Evite super-especializar perguntas institucionais ou terminológicas.
-
- {_CLASSIFIER_FEW_SHOTS}
- """
+"""
 
     classifier = _get_classifier(_resolve_state_model(state))
     result = await classifier.ainvoke([
