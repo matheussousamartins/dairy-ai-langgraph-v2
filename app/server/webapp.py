@@ -65,10 +65,13 @@ from app.config import (
     ORCHESTRATOR_CONTEXT_MAX_MESSAGES,
     ORCHESTRATOR_CONTEXT_MAX_CHARS,
     ORCHESTRATOR_CONTEXT_TRIGGER_MAX_CHARS,
+    MAX_INGEST_FILE_SIZE_MB,
     validate_config,
 )
 from app.db.connection import init_pools, close_pools
 from app.db.memory import load_memory, save_chat_turn, save_routing_log
+from app.db.ingestion_jobs import create_ingestion_job, get_ingestion_job, update_ingestion_job
+from app.rag.parsers import convert_to_markdown, detect_doc_type, SUPPORTED_EXTENSIONS
 from app.agents.base_agent import get_agent_graph, get_all_agent_graphs
 from app.agents.orchestrator import get_orchestrator_graph
 from app.agents.agent_config import get_agent_by_id
@@ -1112,91 +1115,192 @@ async def ingest_document(
         )
 
 
-@app.post("/webhook/ingestao-arquivo")
+async def _run_ingestion_job(
+    job_id: str,
+    file_bytes: bytes,
+    filename: str,
+    agent_id: int,
+    table_name: str,
+    doc_type: str,
+) -> None:
+    """Worker de background: converte, chunka, embeda e indexa o documento.
+
+    Ciclo de status:
+      queued → converting → processing → completed | failed
+
+    Erros são capturados e persistidos em error_detail — o job nunca
+    fica preso em 'converting' ou 'processing' mesmo em exceções inesperadas.
+    """
+    import time
+    start = time.time()
+
+    try:
+        # 1. Conversão para Markdown (CPU-bound → thread separada)
+        await run_in_threadpool(update_ingestion_job, job_id, "converting")
+        md_text, pages = await asyncio.to_thread(convert_to_markdown, file_bytes, filename)
+
+        # Detecção automática de tipo quando o cliente não especificou
+        if doc_type == "manual":
+            doc_type = detect_doc_type(filename, md_text[:3000])
+
+        # 2. Ingestão (chunking + embedding + upsert)
+        await run_in_threadpool(update_ingestion_job, job_id, "processing", pages_detected=pages)
+        result = await asyncio.to_thread(
+            ingest_text, md_text, table_name, agent_id, filename, doc_type
+        )
+
+        elapsed_ms = int((time.time() - start) * 1000)
+
+        if result.get("success"):
+            await run_in_threadpool(
+                update_ingestion_job,
+                job_id,
+                "completed",
+                chunks_created=result.get("chunks_created", 0),
+                chunks_inserted=result.get("chunks_inserted", 0),
+                chunks_updated=result.get("chunks_updated", 0),
+                pages_detected=pages,
+                processing_time_ms=elapsed_ms,
+            )
+        else:
+            # Ingestão rejeitada pelo quality gate ou duplicata
+            detail = result.get("error", "Ingestão rejeitada pelo sistema.")
+            await run_in_threadpool(
+                update_ingestion_job,
+                job_id,
+                "failed",
+                error_detail=detail[:500],
+                pages_detected=pages,
+                processing_time_ms=elapsed_ms,
+            )
+
+    except Exception as exc:
+        elapsed_ms = int((time.time() - start) * 1000)
+        _log_server_error(f"ingestion-job-{job_id}", exc)
+        try:
+            await run_in_threadpool(
+                update_ingestion_job,
+                job_id,
+                "failed",
+                error_detail=str(exc)[:500],
+                processing_time_ms=elapsed_ms,
+            )
+        except Exception:
+            pass
+
+
+@app.post("/webhook/ingestao-arquivo", status_code=202)
 async def ingest_document_file(
     file: UploadFile = File(...),
     agent_id: int = Form(...),
     doc_type: str = Form("manual"),
-    table_name: Optional[str] = Form(default=None),
     _api_key: Optional[str] = Header(default=None, alias=WEBHOOK_API_KEY_HEADER),
 ):
-    """Ingestao via upload de arquivo (multipart/form-data).
+    """Upload assíncrono de documento para ingestão (PDF / DOCX / MD / TXT).
 
-    Fluxo inicial para o webapp:
-      - aceita `.md` e `.txt` diretamente
-      - mapeia `agent_id` para a tabela de embeddings correta
-      - executa deduplicacao por hash + ingestao
+    Retorna HTTP 202 imediatamente com um job_id.
+    O processamento (conversão → chunking → embedding → upsert) ocorre em background.
+    Use GET /webhook/ingestao-status/{job_id} para acompanhar o progresso.
 
-    Para PDF/DOCX, a recomendacao atual e converter para Markdown
-    antes de enviar.
+    Formatos aceitos: .pdf, .docx, .md, .txt
+    Tamanho máximo: MAX_INGEST_FILE_SIZE_MB (padrão 50 MB)
     """
     _verify_webhook_api_key(_api_key)
+
+    # --- Validar agente ---
     agent_config = get_agent_by_id(agent_id)
     if not agent_config:
         raise HTTPException(
             status_code=404,
-            detail=f"Agente {agent_id} nao encontrado. IDs validos: 0 a 6.",
+            detail=f"Agente {agent_id} não encontrado. IDs válidos: 0 a 6.",
         )
+    resolved_table = agent_config["table_name"]
 
-    resolved_table_name = agent_config["table_name"]
-    if table_name and table_name != resolved_table_name:
+    # --- Validar extensão ---
+    filename = (file.filename or "upload").strip()
+    ext = f".{filename.lower().rsplit('.', 1)[-1]}" if "." in filename else ""
+    if ext not in SUPPORTED_EXTENSIONS:
         raise HTTPException(
             status_code=400,
             detail=(
-                "table_name divergente do agent_id informado. "
-                f"Para agent_id={agent_id}, use table_name='{resolved_table_name}'."
+                f"Formato não suportado: '{ext}'. "
+                f"Formatos aceitos: {', '.join(sorted(SUPPORTED_EXTENSIONS))}"
             ),
         )
 
-    filename = file.filename or "upload"
-    extension = filename.lower().rsplit(".", 1)[-1] if "." in filename else ""
-    if extension not in {"md", "txt"}:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Formato nao suportado no upload direto. "
-                "Envie .md/.txt ou converta para Markdown antes da ingestao."
-            ),
-        )
-
+    # --- Ler bytes e validar tamanho ---
     try:
-        raw = await file.read()
-        text = raw.decode("utf-8")
-    except UnicodeDecodeError:
-        raise HTTPException(
-            status_code=400,
-            detail="Arquivo deve estar em UTF-8.",
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Erro ao ler arquivo: {e}",
-        )
+        file_bytes = await file.read()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Erro ao ler arquivo: {exc}")
 
-    if not text.strip():
+    max_bytes = MAX_INGEST_FILE_SIZE_MB * 1024 * 1024
+    if len(file_bytes) > max_bytes:
         raise HTTPException(
-            status_code=400,
-            detail="Arquivo vazio.",
+            status_code=413,
+            detail=f"Arquivo muito grande. Máximo permitido: {MAX_INGEST_FILE_SIZE_MB} MB.",
         )
+    if not file_bytes:
+        raise HTTPException(status_code=400, detail="Arquivo vazio.")
 
+    # --- Criar job e disparar worker ---
     try:
-        result = ingest_text(
-            text=text,
-            table_name=resolved_table_name,
-            agent_id=agent_id,
-            source=filename,
-            doc_type=doc_type,
+        job_id = await run_in_threadpool(
+            create_ingestion_job,
+            agent_id,
+            agent_config["name"],
+            resolved_table,
+            filename,
+            doc_type,
+            len(file_bytes),
         )
-        result["resolved_agent_id"] = agent_id
-        result["resolved_agent_name"] = agent_config["name"]
-        result["resolved_table_name"] = resolved_table_name
-        return result
-    except Exception as e:
-        print(f"[ingestao-arquivo] Erro: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Erro na ingestao de arquivo: {str(e)}",
-        )
+    except Exception as exc:
+        _log_server_error("create-ingestion-job", exc)
+        raise HTTPException(status_code=500, detail="Erro ao registrar job de ingestão.")
+
+    asyncio.create_task(
+        _run_ingestion_job(job_id, file_bytes, filename, agent_id, resolved_table, doc_type)
+    )
+
+    return JSONResponse(
+        status_code=202,
+        content={
+            "job_id": job_id,
+            "status": "queued",
+            "filename": filename,
+            "agent_id": agent_id,
+            "agent_name": agent_config["name"],
+            "table_name": resolved_table,
+            "doc_type": doc_type,
+            "file_size_bytes": len(file_bytes),
+            "message": "Documento recebido. Acompanhe o progresso em /webhook/ingestao-status/{job_id}",
+        },
+    )
+
+
+@app.get("/webhook/ingestao-status/{job_id}")
+async def get_ingestion_status(
+    job_id: str,
+    _api_key: Optional[str] = Header(default=None, alias=WEBHOOK_API_KEY_HEADER),
+):
+    """Status de um job de ingestão.
+
+    Campos de status:
+      queued      — aguardando processamento
+      converting  — convertendo PDF/DOCX para Markdown
+      processing  — chunking + embedding + upsert em andamento
+      completed   — ingestão concluída com sucesso
+      failed      — falha; ver campo error_detail
+
+    Faça polling a cada 3–5 segundos até status = completed | failed.
+    """
+    _verify_webhook_api_key(_api_key)
+
+    job = await run_in_threadpool(get_ingestion_job, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job '{job_id}' não encontrado.")
+
+    return JSONResponse(content=job)
 
 
 # ============================================================

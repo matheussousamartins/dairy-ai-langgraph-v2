@@ -22,8 +22,24 @@ frontend/out/
 frontend/.env
 frontend/.env.local
 frontend/.env*.local
+frontend/tsconfig.tsbuildinfo
 node_modules/
 
 # OS
 .DS_Store
 Thumbs.db
+
+# Claude Code (memória e configuração local do agente)
+.claude/
+
+# LangGraph runtime state (gerado automaticamente, não é código)
+.langgraph_api/
+
+# Ferramentas / binários locais
+ngrok.exe
+markitdown/
+
+# PDFs da base de conhecimento (binários grandes — ingeridos via pipeline)
+docs/agente-*/pdf/
+docs/agente-*/pdf_ascii/
+docs/backup/

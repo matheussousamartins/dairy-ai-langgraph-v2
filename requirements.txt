@@ -18,8 +18,7 @@ langgraph>=0.2.0
 # langchain-experimental>=0.3.4
 
 # --- Reranking (opcional, para RERANKER=cohere) ---
-# Descomente se quiser usar Cohere reranker:
-# langchain-cohere>=0.3.0
+cohere>=5.0.0
 
 # --- OpenAI (LLM + embeddings) ---
 openai>=1.0.0
@@ -32,6 +31,10 @@ psycopg-pool>=3.1.0
 fastapi>=0.110.0
 uvicorn[standard]>=0.27.0
 python-multipart>=0.0.9
+
+# --- Conversão de documentos (ingestão PDF/DOCX) ---
+pymupdf4llm>=0.0.17
+markitdown>=0.1.0
 
 # --- Utilitários ---
 python-dotenv>=1.0.0

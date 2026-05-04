@@ -49,10 +49,13 @@ AdaptaÃ§Ãµes em relaÃ§Ã£o ao original:
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, List, Optional
+import logging
 import os
 import hashlib
 import json
 import re
+
+_log = logging.getLogger(__name__)
 
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_core.tools import tool
@@ -367,6 +370,42 @@ def _is_high_quality_chunk(content: str) -> bool:
     if ratio < RAG_MIN_ALNUM_RATIO:
         return False
     return True
+
+
+def _rerank_results(query: str, results: List[Dict[str, Any]], k: int) -> List[Dict[str, Any]]:
+    """Reranks candidates using Cohere rerank-multilingual-v3.0.
+
+    Falls back to original truncated list on any API error so retrieval
+    never fails silently — callers always get k results.
+    """
+    if not results:
+        return results
+    try:
+        import cohere
+        client = cohere.Client(api_key=COHERE_API_KEY)
+        documents = [r.get("content", "") for r in results]
+        response = client.rerank(
+            model="rerank-multilingual-v3.0",
+            query=query,
+            documents=documents,
+            top_n=min(k, len(documents)),
+        )
+        reranked: List[Dict[str, Any]] = []
+        for hit in response.results:
+            item = dict(results[hit.index])
+            item["score"] = float(hit.relevance_score)
+            reranked.append(item)
+        return reranked
+    except Exception as exc:
+        _log.warning("Cohere rerank failed, falling back to original order: %s", exc)
+        return results[:k]
+
+
+def _maybe_rerank(query: str, results: List[Dict[str, Any]], k: int) -> List[Dict[str, Any]]:
+    """Applies Cohere reranking when configured, otherwise truncates to k."""
+    if RERANKER == "cohere" and COHERE_API_KEY and results:
+        return _rerank_results(query, results, k)
+    return results[:k]
 
 
 def _postprocess_results(query: str, results: List[Dict[str, Any]], k: int) -> List[Dict[str, Any]]:
@@ -830,18 +869,22 @@ def search_knowledge_base(
             )
         return _fuse_results_rrf(result_lists, max(limit * 2, limit + 2))
 
+    # Quando reranker habilitado, busca mais candidatos para dar ao Cohere
+    # mais material para trabalhar antes de reordenar para os top _k finais.
+    _eff_k = max(_k, RERANK_CANDIDATES) if RERANKER == "cohere" and COHERE_API_KEY else _k
+
     # Primeira passada: caminho quente e mais frequente.
     # O query rewrite fica reservado para a segunda passada (fraca),
     # reduzindo custo fixo sem perder a ferramenta quando o retrieval vier ruim.
     primary_raw = _run_search_with_optional_rewrite(
         query,
-        _k,
+        _eff_k,
         enable_query_rewrite=False,
     )
-    primary = _postprocess_results(query, primary_raw, _k)
+    primary = _postprocess_results(query, primary_raw, _eff_k)
 
     if not _needs_second_pass(query, primary, _k):
-        return primary
+        return _maybe_rerank(query, primary, _k)
 
     second_k = int(round(_k * max(1.0, RAG_SECOND_PASS_EXPAND_FACTOR)))
     second_k = max(_k + 2, second_k)
@@ -860,10 +903,10 @@ def search_knowledge_base(
     )
     second = _postprocess_results(query, second_raw, second_k)
     if not second:
-        return primary
+        return _maybe_rerank(query, primary, _k)
 
-    merged = _fuse_results_rrf([primary, second], max(_k * 2, _k + 2))
-    return _postprocess_results(query, merged, _k)
+    merged = _fuse_results_rrf([primary, second], max(_eff_k * 2, _eff_k + 2))
+    return _maybe_rerank(query, _postprocess_results(query, merged, _eff_k), _k)
 
 
 def search_general_knowledge_base(

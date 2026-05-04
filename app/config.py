@@ -416,6 +416,9 @@ INGEST_MIN_WORDS_GLOSSARIO = int(os.getenv("INGEST_MIN_WORDS_GLOSSARIO", "30"))
 # Mínimo de caracteres alfanuméricos por chunk (filtra chunks degenerados pós-split)
 INGEST_MIN_CHUNK_ALNUM = int(os.getenv("INGEST_MIN_CHUNK_ALNUM", "15"))
 
+# Upload de arquivos via web — tamanho máximo aceito pelo endpoint de ingestão
+MAX_INGEST_FILE_SIZE_MB = int(os.getenv("MAX_INGEST_FILE_SIZE_MB", "50"))
+
 
 # ============================================================
 # VALIDAÃ‡ÃƒO â€” Verifica configuraÃ§Ãµes crÃ­ticas no startup
