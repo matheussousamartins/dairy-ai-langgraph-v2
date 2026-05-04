@@ -29,6 +29,38 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+def _parse_optional_non_negative_int_env(var_name: str, default: str = "") -> int | None:
+    """Lê um inteiro não negativo de env, aceitando None explícito.
+
+    Valores aceitos para None: "", "none", "null", "false", "off", "disabled".
+    """
+    raw = os.getenv(var_name, default)
+    normalized = (raw or "").strip().lower()
+    if normalized in {"", "none", "null", "false", "off", "disabled"}:
+        return None
+    try:
+        value = int(normalized)
+    except ValueError as exc:
+        raise ValueError(
+            f"Variável {var_name} inválida: '{raw}'. Use inteiro >= 0 ou 'none'."
+        ) from exc
+    if value < 0:
+        raise ValueError(
+            f"Variável {var_name} inválida: {value}. Use inteiro >= 0 ou 'none'."
+        )
+    return value
+
+
+def _parse_csv_env(var_name: str, default: str = "") -> list[str]:
+    raw = os.getenv(var_name, default)
+    items = [item.strip() for item in (raw or "").split(",") if item.strip()]
+    deduped: list[str] = []
+    for item in items:
+        if item not in deduped:
+            deduped.append(item)
+    return deduped
+
+
 # ============================================================
 # OPENAI â€” Chaves e modelos
 # ============================================================
@@ -45,16 +77,30 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 # Para testes com qualidade mÃ¡xima, use "gpt-4o".
 # Para economia mÃ¡xima durante desenvolvimento, use "gpt-3.5-turbo".
 LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini")
+ALLOWED_CHAT_MODELS = _parse_csv_env("ALLOWED_CHAT_MODELS", LLM_MODEL)
 
 # Temperaturas por papel â€” controla criatividade vs. determinismo.
 # 0 = determinÃ­stico (ideal para classificaÃ§Ã£o), 1 = mais criativo.
 AGENT_TEMPERATURE         = float(os.getenv("AGENT_TEMPERATURE", "0.3"))
 CONSOLIDATION_TEMPERATURE = float(os.getenv("CONSOLIDATION_TEMPERATURE", "0.3"))
+CONSOLIDATION_TIMEOUT_SEC = float(os.getenv("CONSOLIDATION_TIMEOUT_SEC", "10"))
 DIRECT_TEMPERATURE        = float(os.getenv("DIRECT_TEMPERATURE", "0.5"))
 CLASSIFIER_TEMPERATURE    = float(os.getenv("CLASSIFIER_TEMPERATURE", "0"))
 AGENT_PROMPT_MODE         = os.getenv("AGENT_PROMPT_MODE", "compact").strip().lower()
 ORCHESTRATOR_FASTPATH     = os.getenv("ORCHESTRATOR_FASTPATH", "true").strip().lower() == "true"
 CLASSIFICATION_CACHE_SIZE = int(os.getenv("CLASSIFICATION_CACHE_SIZE", "256"))
+ORCHESTRATOR_CONTEXT_MEMORY_ENABLED = (
+    os.getenv("ORCHESTRATOR_CONTEXT_MEMORY_ENABLED", "true").strip().lower() == "true"
+)
+ORCHESTRATOR_CONTEXT_MAX_MESSAGES = int(
+    os.getenv("ORCHESTRATOR_CONTEXT_MAX_MESSAGES", "6")
+)
+ORCHESTRATOR_CONTEXT_MAX_CHARS = int(
+    os.getenv("ORCHESTRATOR_CONTEXT_MAX_CHARS", "1200")
+)
+ORCHESTRATOR_CONTEXT_TRIGGER_MAX_CHARS = int(
+    os.getenv("ORCHESTRATOR_CONTEXT_TRIGGER_MAX_CHARS", "220")
+)
 
 # Modelo usado para gerar EMBEDDINGS (vetores dos documentos e queries).
 # text-embedding-3-small gera vetores de 1536 dimensÃµes.
@@ -105,6 +151,19 @@ HETZNER_DB_POOL_RECONNECT_TIMEOUT_SEC = float(
     os.getenv("HETZNER_DB_POOL_RECONNECT_TIMEOUT_SEC", "30")
 )
 HETZNER_DB_CONNECT_TIMEOUT_SEC = int(os.getenv("HETZNER_DB_CONNECT_TIMEOUT_SEC", "8"))
+
+# Prepared statements (psycopg3):
+# Em ambientes com pooler (ex.: Supabase/PgBouncer), prepared statements podem
+# quebrar de forma intermitente com erro "... does not exist" quando a sessão
+# do backend muda entre queries. Por segurança operacional, default = disabled.
+SUPABASE_DB_PREPARE_THRESHOLD = _parse_optional_non_negative_int_env(
+    "SUPABASE_DB_PREPARE_THRESHOLD",
+    "none",
+)
+HETZNER_DB_PREPARE_THRESHOLD = _parse_optional_non_negative_int_env(
+    "HETZNER_DB_PREPARE_THRESHOLD",
+    "none",
+)
 
 
 # ============================================================
@@ -210,9 +269,29 @@ RAG_SECOND_PASS_FORCE_HYBRID = os.getenv("RAG_SECOND_PASS_FORCE_HYBRID", "true")
 RAG_SECOND_PASS_DISABLE_THRESHOLD = os.getenv("RAG_SECOND_PASS_DISABLE_THRESHOLD", "true").strip().lower() == "true"
 RAG_SECOND_PASS_USE_QUERY_REWRITE = os.getenv("RAG_SECOND_PASS_USE_QUERY_REWRITE", "true").strip().lower() == "true"
 
+# Early-skip conservador para buscas sabidamente fracas.
+# Objetivo: cortar apenas retries caros e pouco promissores, sem mexer
+# no recall dos especialistas. Deve ser habilitado por rollout controlado.
+RAG_EARLY_SKIP_WEAK_SEARCH_ENABLED = os.getenv(
+    "RAG_EARLY_SKIP_WEAK_SEARCH_ENABLED", "false"
+).strip().lower() == "true"
+RAG_EARLY_SKIP_WEAK_AGENT_IDS = {
+    int(part.strip())
+    for part in os.getenv("RAG_EARLY_SKIP_WEAK_AGENT_IDS", "0").split(",")
+    if part.strip().isdigit()
+}
+RAG_EARLY_SKIP_WEAK_MIN_QUERY_KEYWORDS = int(
+    os.getenv("RAG_EARLY_SKIP_WEAK_MIN_QUERY_KEYWORDS", "3")
+)
+RAG_EARLY_SKIP_WEAK_MIN_TOP_KEYWORD_HITS = int(
+    os.getenv("RAG_EARLY_SKIP_WEAK_MIN_TOP_KEYWORD_HITS", "2")
+)
+RAG_EARLY_SKIP_WEAK_HYBRID_MAX_SCORE = float(
+    os.getenv("RAG_EARLY_SKIP_WEAK_HYBRID_MAX_SCORE", "0.059")
+)
+
 # Fallback final do orquestrador: busca em base geral unificada (multi-tabela).
-# Deve ficar DESLIGADO por padrão e ser ativado por rollout controlado.
-ENABLE_GENERAL_INDEX_FALLBACK = os.getenv("ENABLE_GENERAL_INDEX_FALLBACK", "false").strip().lower() == "true"
+ENABLE_GENERAL_INDEX_FALLBACK = os.getenv("ENABLE_GENERAL_INDEX_FALLBACK", "true").strip().lower() == "true"
 GENERAL_INDEX_FALLBACK_SEARCH_TYPE = os.getenv("GENERAL_INDEX_FALLBACK_SEARCH_TYPE", "hybrid_rrf").strip().lower()
 GENERAL_INDEX_FALLBACK_PER_TABLE_K = int(os.getenv("GENERAL_INDEX_FALLBACK_PER_TABLE_K", "3"))
 GENERAL_INDEX_FALLBACK_FINAL_K = int(os.getenv("GENERAL_INDEX_FALLBACK_FINAL_K", "6"))
@@ -222,7 +301,7 @@ GENERAL_INDEX_FALLBACK_ONLY_ON_WEAK = os.getenv("GENERAL_INDEX_FALLBACK_ONLY_ON_
 GENERAL_INDEX_FALLBACK_REQUIRE_DAIRY_SIGNAL = os.getenv("GENERAL_INDEX_FALLBACK_REQUIRE_DAIRY_SIGNAL", "true").strip().lower() == "true"
 
 # Fallback final na internet (última camada, com whitelist).
-ENABLE_WEB_FALLBACK = os.getenv("ENABLE_WEB_FALLBACK", "false").strip().lower() == "true"
+ENABLE_WEB_FALLBACK = os.getenv("ENABLE_WEB_FALLBACK", "true").strip().lower() == "true"
 WEB_FALLBACK_PROVIDER = os.getenv("WEB_FALLBACK_PROVIDER", "duckduckgo").strip().lower()
 WEB_FALLBACK_TIMEOUT_SEC = float(os.getenv("WEB_FALLBACK_TIMEOUT_SEC", "8"))
 WEB_FALLBACK_MAX_RESULTS = int(os.getenv("WEB_FALLBACK_MAX_RESULTS", "6"))
@@ -241,7 +320,9 @@ WEB_FALLBACK_ALLOWED_DOMAINS = [
         "WEB_FALLBACK_ALLOWED_DOMAINS",
         (
             "gov.br,anvisa.gov.br,agricultura.gov.br,in.gov.br,planalto.gov.br,"
-            "fao.org,who.int,codexalimentarius.fao.org,mercosur.int,iso.org"
+            "fao.org,who.int,codexalimentarius.fao.org,mercosur.int,iso.org,"
+            "novonesis.com,chr-hansen.com,dsm.com,dsm-firmenich.com,"
+            "ncbi.nlm.nih.gov,pmc.ncbi.nlm.nih.gov,sciencedirect.com"
         ),
     ).split(",")
     if item.strip()
@@ -332,6 +413,8 @@ INGEST_MIN_TEXT_CHARS_GLOSSARIO = int(
     os.getenv("INGEST_MIN_TEXT_CHARS_GLOSSARIO", "250")
 )
 INGEST_MIN_WORDS_GLOSSARIO = int(os.getenv("INGEST_MIN_WORDS_GLOSSARIO", "30"))
+# Mínimo de caracteres alfanuméricos por chunk (filtra chunks degenerados pós-split)
+INGEST_MIN_CHUNK_ALNUM = int(os.getenv("INGEST_MIN_CHUNK_ALNUM", "15"))
 
 
 # ============================================================

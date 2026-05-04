@@ -208,9 +208,11 @@ def save_chat_turn(
     agent_response: str,
     response_time_ms: int,
 ) -> None:
-    """Salva a rodada completa (human + ai + log) em uma única conexão.
+    """Salva a rodada completa (human + ai + interaction_log) em uma única conexão.
 
-    Reduz overhead de pool/round-trip comparado a 3 chamadas separadas.
+    Mantém o histórico da conversa e também alimenta a tabela de analytics
+    usada pelo console/testes. Assim, todos os caminhos HTTP que persistem
+    um turno de chat também registram a interação correspondente.
     """
     now = datetime.utcnow()
     with get_hetzner_conn() as conn:
@@ -225,6 +227,23 @@ def save_chat_turn(
                 (
                     session_id, "human", user_message, now,
                     session_id, "ai", agent_response, now,
+                ),
+            )
+            cur.execute(
+                """
+                INSERT INTO interaction_logs
+                    (session_id, agent_id, agent_name, user_message,
+                     agent_response, response_time_ms, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    session_id,
+                    agent_id,
+                    agent_name,
+                    user_message,
+                    agent_response,
+                    int(response_time_ms),
+                    now,
                 ),
             )
 
@@ -248,7 +267,12 @@ def save_routing_log(
     fallback_trigger: str,
     cost_estimate_usd: float,
 ) -> None:
-    """Registra dados estruturados de roteamento do orquestrador."""
+    """Registra dados estruturados de roteamento do orquestrador.
+
+    A persistência da interação textual fica concentrada em save_chat_turn().
+    Este método grava apenas a telemetria estruturada de roteamento para evitar
+    duplicidade e manter responsabilidades separadas.
+    """
     now = datetime.utcnow()
     with get_hetzner_conn() as conn:
         with conn.cursor() as cur:
@@ -299,23 +323,6 @@ def save_routing_log(
                     fallback_trigger,
                     int(response_time_ms),
                     float(cost_estimate_usd),
-                    now,
-                ),
-            )
-            cur.execute(
-                """
-                INSERT INTO interaction_logs
-                    (session_id, agent_id, agent_name, user_message,
-                     agent_response, response_time_ms, created_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-                """,
-                (
-                    session_id,
-                    agent_id,
-                    agent_name,
-                    user_message,
-                    agent_response,
-                    response_time_ms,
                     now,
                 ),
             )

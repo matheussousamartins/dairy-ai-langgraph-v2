@@ -40,12 +40,14 @@ from app.config import (
     HETZNER_DB_CONNECT_TIMEOUT_SEC,
     HETZNER_DB_POOL_MAX_SIZE,
     HETZNER_DB_POOL_MIN_SIZE,
+    HETZNER_DB_PREPARE_THRESHOLD,
     HETZNER_DB_POOL_RECONNECT_TIMEOUT_SEC,
     HETZNER_DB_POOL_TIMEOUT_SEC,
     HETZNER_DB_URL,
     SUPABASE_DB_CONNECT_TIMEOUT_SEC,
     SUPABASE_DB_POOL_MAX_SIZE,
     SUPABASE_DB_POOL_MIN_SIZE,
+    SUPABASE_DB_PREPARE_THRESHOLD,
     SUPABASE_DB_POOL_RECONNECT_TIMEOUT_SEC,
     SUPABASE_DB_POOL_TIMEOUT_SEC,
     SUPABASE_DB_URL,
@@ -107,6 +109,9 @@ def init_pools() -> None:
                 "autocommit": True,     # Cada query é um commit automático
                                         # (não precisamos de transações longas)
                 "connect_timeout": SUPABASE_DB_CONNECT_TIMEOUT_SEC,
+                # Compatibilidade com poolers (ex.: Supabase/PgBouncer):
+                # evita "prepared statement ... does not exist" intermitente.
+                "prepare_threshold": SUPABASE_DB_PREPARE_THRESHOLD,
                 # TCP keepalives: evita que o Supabase Session Pooler feche
                 # conexões inativas durante ingestões longas (OpenAI pode
                 # levar 30-60s, deixando a conexão idle nesse período).
@@ -129,6 +134,7 @@ def init_pools() -> None:
             kwargs={
                 "autocommit": True,
                 "connect_timeout": HETZNER_DB_CONNECT_TIMEOUT_SEC,
+                "prepare_threshold": HETZNER_DB_PREPARE_THRESHOLD,
             },
         )
 

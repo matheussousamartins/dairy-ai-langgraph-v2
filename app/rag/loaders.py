@@ -134,6 +134,7 @@ def split_fixed(
         "\n§ ",      # Parágrafo de legislação (ex: "§ 1º")
         "\n",        # Linha simples
         ". ",        # Fim de frase
+        "; ",        # Separador de itens em listas técnicas (parâmetros, especificações)
         " ",         # Espaço entre palavras (último recurso)
     ]
     

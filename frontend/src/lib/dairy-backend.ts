@@ -36,6 +36,7 @@ export async function callDairyWebhook(
   agentId: string,
   message: string,
   sessionId: string,
+  model: string,
   authHeader?: string | null,
 ): Promise<DairyBackendResponse> {
   const endpoint = resolveAgentEndpoint(agentId);
@@ -47,6 +48,7 @@ export async function callDairyWebhook(
     body: JSON.stringify({
       message,
       session_id: sessionId,
+      model,
     }),
     cache: "no-store",
   });

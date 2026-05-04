@@ -58,6 +58,7 @@ from app.config import (
     INGEST_MIN_WORDS_GLOSSARIO,
     INGEST_MAX_GARBLED_RATIO,
     INGEST_MIN_QUALITY_SCORE,
+    INGEST_MIN_CHUNK_ALNUM,
 )
 from app.rag.loaders import split_text, split_by_doc_type
 from app.db.connection import get_supabase_conn, get_hetzner_conn
@@ -834,6 +835,12 @@ def ingest_text(
                 "chunks_updated": 0,
                 **quality_report,
             }
+
+        # Filtra chunks degenerados (ex: ".", linha em branco, artefato de PDF)
+        chunks_text = [
+            c for c in chunks_text
+            if sum(1 for ch in c if ch.isalnum()) >= INGEST_MIN_CHUNK_ALNUM
+        ]
 
         # ---- Etapa 2: Embeddings ----
         # Gera embeddings para todos os chunks em uma chamada batch

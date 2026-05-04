@@ -372,6 +372,356 @@ def listar_formulas_base(
     }
 
 
+
+# ---------------------------------------------------------------------------
+# Catalogo deterministico de formulas do cliente (Principais Formulas.pdf)
+# ---------------------------------------------------------------------------
+
+_FC_TABLE = {
+    "massa_mole": 1.18,
+    "filados": 1.11,
+    "continentais": 1.11,
+    "duros": 1.09,
+}
+
+_FORMULA_CATALOG: Dict[str, Dict[str, Any]] = {
+    "van_slyke_original": {
+        "nome": "Van Slyke Original",
+        "descricao": "Rendimento teorico de queijo em kg/100L de leite.",
+        "formula_tex": "Rendimento = [(0.93 * F + C - 0.1) * 1.09] / (1 - W)",
+        "parametros": {
+            "F": "Gordura do leite (%)",
+            "C": "Caseina do leite (%)",
+            "W": "Umidade do queijo (decimal, ex: 0.44 para 44%)",
+        },
+        "unidade": "kg/100L",
+    },
+    "van_slyke_otimizada": {
+        "nome": "Van Slyke Otimizada (Profit)",
+        "descricao": "Rendimento teorico com fatores de retencao e correcao por tipo de queijo.",
+        "formula_tex": "Rendimento = {[FRF * F] + [PTN * PC * FT] * FC} / (1 - W)",
+        "parametros": {
+            "FRF": "Fator de retencao de gordura (decimal, ex: 0.90)",
+            "F": "Gordura do leite (%)",
+            "PTN": "Proteina total do leite (%)",
+            "PC": "Caseina como fracao da proteina total (decimal, ex: 0.78)",
+            "FT": "Fator de transicao da caseina (decimal, ex: 1.00)",
+            "FC": f"Fator de correcao por tipo de queijo — aceita nome ('massa_mole','filados','continentais','duros') ou valor numerico. Tabela: {_FC_TABLE}",
+            "W": "Umidade do queijo (decimal)",
+        },
+        "unidade": "kg/100L",
+    },
+    "van_slyke_lkg": {
+        "nome": "Conversao Van Slyke para L/kg",
+        "descricao": "Converte rendimento kg/100L para L/kg de queijo.",
+        "formula_tex": "Rendimento_L_kg = (100 / D15) / RVS",
+        "parametros": {
+            "D15": "Densidade do leite a 15°C (g/mL, ex: 1.032)",
+            "RVS": "Resultado Van Slyke em kg/100L",
+        },
+        "unidade": "L/kg",
+    },
+    "fleischmann": {
+        "nome": "Fleischmann (EST do leite)",
+        "descricao": "Extrato Seco Total do leite a partir de gordura e densidade.",
+        "formula_tex": "EST = (1.2 * F) + (266.5 * (D15 - 1) / D15) + 0.25",
+        "parametros": {
+            "F": "Gordura do leite (%)",
+            "D15": "Densidade do leite a 15°C (g/mL, ex: 1.032)",
+        },
+        "unidade": "%",
+    },
+    "furtado": {
+        "nome": "Furtado (EST do leite)",
+        "descricao": "Simplificacao de Fleischmann usando graus lactometricos.",
+        "formula_tex": "EST = (1.2 * F) + (0.25 * L15) + 0.25",
+        "parametros": {
+            "F": "Gordura do leite (%)",
+            "L15": "Graus lactometricos a 15°C = (D - 1) * 1000",
+        },
+        "unidade": "%",
+    },
+    "esd_fleischmann_furtado": {
+        "nome": "ESD a partir de Fleischmann/Furtado",
+        "descricao": "Extrato Seco Desengordurado = EST - Gordura.",
+        "formula_tex": "ESD = RFF - F",
+        "parametros": {
+            "RFF": "Resultado de Fleischmann ou Furtado (%)",
+            "F": "Gordura do leite (%)",
+        },
+        "unidade": "%",
+    },
+    "richmond_f1": {
+        "nome": "Richmond F1 (EST, L15)",
+        "descricao": "EST do leite com leituras a 15°C.",
+        "formula_tex": "EST = (L15 / 4) + (1.2 * F) + 0.14",
+        "parametros": {
+            "L15": "Graus lactometricos a 15°C",
+            "F": "Gordura do leite (%)",
+        },
+        "unidade": "%",
+    },
+    "richmond_f2": {
+        "nome": "Richmond F2 (EST, L20)",
+        "descricao": "EST do leite com leituras a 20°C.",
+        "formula_tex": "EST = (L20 / 4) + (1.2 * F) + 0.50",
+        "parametros": {
+            "L20": "Graus lactometricos a 20°C",
+            "F": "Gordura do leite (%)",
+        },
+        "unidade": "%",
+    },
+    "richmond_f3": {
+        "nome": "Richmond F3 (ESD, L15)",
+        "descricao": "ESD do leite com leituras a 15°C.",
+        "formula_tex": "ESD = (L15 / 4) + (0.2 * F) + 0.14",
+        "parametros": {
+            "L15": "Graus lactometricos a 15°C",
+            "F": "Gordura do leite (%)",
+        },
+        "unidade": "%",
+    },
+    "richmond_f4": {
+        "nome": "Richmond F4 (ESD, L20)",
+        "descricao": "ESD do leite com leituras a 20°C.",
+        "formula_tex": "ESD = (L20 / 4) + (0.2 * F) + 0.50",
+        "parametros": {
+            "L20": "Graus lactometricos a 20°C",
+            "F": "Gordura do leite (%)",
+        },
+        "unidade": "%",
+    },
+    "densidade_para_graus_lactometricos": {
+        "nome": "Densidade para Graus Lactometricos",
+        "descricao": "Converte densidade do leite para escala lactometrica.",
+        "formula_tex": "L = (D - 1) * 1000",
+        "parametros": {
+            "D": "Densidade do leite (g/mL, ex: 1.0325)",
+        },
+        "unidade": "°GL",
+    },
+    "furtado_soro": {
+        "nome": "Furtado Adaptado para Soro",
+        "descricao": "EST do soro de queijo.",
+        "formula_tex": "EST = (1.2 * F) + (L15 / 4.33) + 0.25",
+        "parametros": {
+            "F": "Gordura do soro (%)",
+            "L15": "Graus lactometricos do soro a 15°C",
+        },
+        "unidade": "%",
+    },
+}
+
+
+def _calc_van_slyke_original(F: float, C: float, W: float) -> float:
+    if W >= 1.0 or W < 0:
+        raise ValueError("W (umidade) deve ser decimal entre 0 e 1, ex: 0.44 para 44%")
+    return ((0.93 * F + C - 0.1) * 1.09) / (1 - W)
+
+
+def _calc_van_slyke_otimizada(
+    FRF: float, F: float, PTN: float, PC: float, FT: float, FC: float, W: float
+) -> float:
+    if W >= 1.0 or W < 0:
+        raise ValueError("W (umidade) deve ser decimal entre 0 e 1")
+    return ((FRF * F) + (PTN * PC * FT) * FC) / (1 - W)
+
+
+def _calc_van_slyke_lkg(D15: float, RVS: float) -> float:
+    if D15 <= 0:
+        raise ValueError("D15 deve ser > 0")
+    if RVS <= 0:
+        raise ValueError("RVS deve ser > 0")
+    return (100 / D15) / RVS
+
+
+def _calc_fleischmann(F: float, D15: float) -> float:
+    if D15 <= 0:
+        raise ValueError("D15 deve ser > 0")
+    return (1.2 * F) + (266.5 * (D15 - 1) / D15) + 0.25
+
+
+def _calc_furtado(F: float, L15: float) -> float:
+    return (1.2 * F) + (0.25 * L15) + 0.25
+
+
+def _calc_esd(RFF: float, F: float) -> float:
+    return RFF - F
+
+
+def _calc_richmond(L: float, F: float, divisor: float, fat_coef: float, intercept: float) -> float:
+    return (L / divisor) + (fat_coef * F) + intercept
+
+
+def _calc_densidade_para_gl(D: float) -> float:
+    return (D - 1) * 1000
+
+
+def _calc_furtado_soro(F: float, L15: float) -> float:
+    return (1.2 * F) + (L15 / 4.33) + 0.25
+
+
+def _resolve_fc(p: Dict[str, Any]) -> float:
+    """Aceita FC como float (ex: 1.11) ou como nome de tipo (ex: 'filados')."""
+    raw = p.get("FC")
+    if raw is None:
+        raise ValueError(
+            "Parametro 'FC' obrigatorio para van_slyke_otimizada. "
+            f"Opcoes por nome: {list(_FC_TABLE.keys())} ou valor numerico direto."
+        )
+    if isinstance(raw, str):
+        key = raw.strip().lower()
+        fc = _FC_TABLE.get(key)
+        if fc is None:
+            raise ValueError(
+                f"Tipo de queijo '{raw}' nao reconhecido para FC. "
+                f"Opcoes: {list(_FC_TABLE.keys())}"
+            )
+        return fc
+    return _to_finite_float(raw, "FC")
+
+
+def _require(p: Dict[str, Any], *keys: str) -> None:
+    missing = [k for k in keys if k not in p]
+    if missing:
+        raise ValueError(f"Parametros obrigatorios ausentes: {missing}")
+
+
+_FORMULA_RUNNERS: Dict[str, Any] = {
+    "van_slyke_original": lambda p: (
+        _require(p, "F", "C", "W") or
+        _calc_van_slyke_original(p["F"], p["C"], p["W"])
+    ),
+    "van_slyke_otimizada": lambda p: (
+        _require(p, "FRF", "F", "PTN", "PC", "FT", "W") or
+        _calc_van_slyke_otimizada(p["FRF"], p["F"], p["PTN"], p["PC"], p["FT"], _resolve_fc(p), p["W"])
+    ),
+    "van_slyke_lkg": lambda p: (
+        _require(p, "D15", "RVS") or _calc_van_slyke_lkg(p["D15"], p["RVS"])
+    ),
+    "fleischmann": lambda p: (
+        _require(p, "F", "D15") or _calc_fleischmann(p["F"], p["D15"])
+    ),
+    "furtado": lambda p: (
+        _require(p, "F", "L15") or _calc_furtado(p["F"], p["L15"])
+    ),
+    "esd_fleischmann_furtado": lambda p: (
+        _require(p, "RFF", "F") or _calc_esd(p["RFF"], p["F"])
+    ),
+    "richmond_f1": lambda p: (
+        _require(p, "L15", "F") or _calc_richmond(p["L15"], p["F"], 4, 1.2, 0.14)
+    ),
+    "richmond_f2": lambda p: (
+        _require(p, "L20", "F") or _calc_richmond(p["L20"], p["F"], 4, 1.2, 0.50)
+    ),
+    "richmond_f3": lambda p: (
+        _require(p, "L15", "F") or _calc_richmond(p["L15"], p["F"], 4, 0.2, 0.14)
+    ),
+    "richmond_f4": lambda p: (
+        _require(p, "L20", "F") or _calc_richmond(p["L20"], p["F"], 4, 0.2, 0.50)
+    ),
+    "densidade_para_graus_lactometricos": lambda p: (
+        _require(p, "D") or _calc_densidade_para_gl(p["D"])
+    ),
+    "furtado_soro": lambda p: (
+        _require(p, "F", "L15") or _calc_furtado_soro(p["F"], p["L15"])
+    ),
+}
+
+
+@tool
+def buscar_formula(nome: str) -> Dict[str, Any]:
+    """Busca uma formula do catalogo de laticinio pelo nome (slug).
+
+    Retorna a definicao completa: formula, parametros, unidade, descricao.
+    Para listar todos os slugs disponíveis, passe nome="listar".
+
+    Slugs disponíveis:
+    - van_slyke_original
+    - van_slyke_otimizada
+    - van_slyke_lkg
+    - fleischmann
+    - furtado
+    - esd_fleischmann_furtado
+    - richmond_f1, richmond_f2, richmond_f3, richmond_f4
+    - densidade_para_graus_lactometricos
+    - furtado_soro
+    """
+    if nome == "listar":
+        return {
+            "formulas_disponiveis": [
+                {"slug": k, "nome": v["nome"], "descricao": v["descricao"]}
+                for k, v in _FORMULA_CATALOG.items()
+            ]
+        }
+
+    entry = _FORMULA_CATALOG.get(nome)
+    if not entry:
+        slugs = list(_FORMULA_CATALOG.keys())
+        raise ValueError(f"Formula '{nome}' nao encontrada. Slugs validos: {slugs}")
+
+    return dict(entry)
+
+
+@tool
+def calcular_formula_catalogo(
+    formula: str,
+    parametros: Dict[str, Any],
+    precision: int = 4,
+) -> Dict[str, Any]:
+    """Calcula uma formula do catalogo de laticinio com valores reais.
+
+    Parametros:
+    - formula: slug da formula (ex: "van_slyke_original").
+      Use buscar_formula("listar") para ver todos os slugs.
+    - parametros: dicionario com os valores de entrada. Numeros para a maioria
+      dos campos; para van_slyke_otimizada, 'FC' aceita nome do tipo de queijo
+      ('massa_mole', 'filados', 'continentais', 'duros') ou valor numerico.
+    - precision: casas decimais do resultado (0-10).
+
+    Exemplo — Van Slyke original:
+      formula="van_slyke_original"
+      parametros={"F": 3.5, "C": 2.65, "W": 0.44}
+
+    Exemplo — Van Slyke Otimizada com nome de tipo:
+      formula="van_slyke_otimizada"
+      parametros={"FRF": 0.90, "F": 3.5, "PTN": 3.2, "PC": 0.78, "FT": 1.0, "FC": "filados", "W": 0.46}
+
+    Exemplo — Fleischmann:
+      formula="fleischmann"
+      parametros={"F": 3.5, "D15": 1.032}
+    """
+    if not (0 <= precision <= 10):
+        raise ValueError("precision deve estar entre 0 e 10")
+
+    entry = _FORMULA_CATALOG.get(formula)
+    if not entry:
+        slugs = list(_FORMULA_CATALOG.keys())
+        raise ValueError(f"Formula '{formula}' nao encontrada. Slugs validos: {slugs}")
+
+    runner = _FORMULA_RUNNERS[formula]
+    clean_params: Dict[str, Any] = {}
+    for k, v in parametros.items():
+        if k == "FC" and isinstance(v, str):
+            clean_params[k] = v
+        else:
+            clean_params[k] = _to_finite_float(v, k)
+
+    result = runner(clean_params)
+
+    if not isfinite(result):
+        raise ValueError("Resultado nao finito — verifique os parametros")
+
+    return {
+        "formula_slug": formula,
+        "formula_nome": entry["nome"],
+        "formula_tex": entry["formula_tex"],
+        "parametros": clean_params,
+        "resultado": round(result, precision),
+        "unidade": entry["unidade"],
+    }
+
+
 def get_calculation_tools() -> list:
     """Retorna as tools de calculo compartilhadas."""
     return [
@@ -380,4 +730,6 @@ def get_calculation_tools() -> list:
         calcular_diluicao_c1v1,
         calcular_rendimento_percentual,
         listar_formulas_base,
+        buscar_formula,
+        calcular_formula_catalogo,
     ]

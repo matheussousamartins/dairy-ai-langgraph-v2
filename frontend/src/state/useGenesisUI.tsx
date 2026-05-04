@@ -1,7 +1,13 @@
-"use client";
+﻿"use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "./useAuth";
+import {
+  isWeakThreadPrompt,
+  shouldReplaceSessionTitle,
+  summarizeThreadTitleFromMessages,
+  summarizeThreadTitleFromText,
+} from "@/lib/thread-title";
 
 export type Role = "user" | "assistant";
 
@@ -19,7 +25,9 @@ export interface GenesisMessage {
   role: Role;
   content: string;
   timestamp: number;
+  turnId?: string;
   modelId?: string;
+  agentId?: string;
   usedTavily?: boolean;
   trace?: TraceEvent[];
 }
@@ -28,8 +36,11 @@ interface RawMessage {
   id?: string;
   type?: string;
   content?: unknown;
+  turn_id?: string;
+  trace?: TraceEvent[];
   response_metadata?: {
     model_name?: string;
+    agent_id?: string;
   };
   tool_calls?: unknown[];
   created_at?: string;
@@ -41,15 +52,41 @@ interface RawMessage {
 interface RawThread {
   thread_id: string;
   created_at?: string;
+  summary?: {
+    title?: string;
+    preview?: string;
+    message_count?: number;
+    question?: string;
+    last_agent_id?: string;
+  };
   values?: {
     messages?: RawMessage[];
   };
 }
 
 interface ModelsResponse {
+  default_model?: string;
   models?: Array<{
     id: string;
     label: string;
+    provider?: string;
+    description?: string;
+    family?: string;
+    family_subtitle?: string;
+    compatibility_status?: "ready" | "requires_adapter";
+    compatibility_message?: string;
+    setup_hint?: string;
+    selectable?: boolean;
+    input_cost?: number;
+    output_cost?: number;
+  }>;
+}
+
+interface AgentsResponse {
+  agents?: Array<{
+    id: string;
+    label: string;
+    endpoint: string;
     input_cost?: number;
     output_cost?: number;
   }>;
@@ -101,6 +138,7 @@ function normalizeMessage(message: RawMessage, index: number): GenesisMessage | 
   }
   const role: Role = message.type === "human" ? "user" : "assistant";
   const modelId = message.response_metadata?.model_name;
+  const agentId = message.response_metadata?.agent_id;
   
   // Tenta extrair timestamp da mensagem
   let timestamp = Date.now();
@@ -124,8 +162,11 @@ function normalizeMessage(message: RawMessage, index: number): GenesisMessage | 
     role,
     content,
     timestamp,
+    turnId: message.turn_id,
     modelId,
+    agentId,
     usedTavily: Boolean(message.tool_calls && (message.tool_calls as unknown[]).length > 0),
+    trace: Array.isArray(message.trace) ? message.trace : undefined,
   };
 }
 
@@ -150,11 +191,22 @@ function normalizeThread(thread: RawThread) {
     .filter((msg): msg is GenesisMessage => Boolean(msg));
     
   const firstUser = normalized.find((msg) => msg.role === "user");
-  const title = firstUser ? firstUser.content.slice(0, 42) : `Thread ${thread.thread_id.slice(0, 8)}`;
+  const summarizedTitle = summarizeThreadTitleFromMessages(
+    normalized.map((message) => ({ role: message.role, content: message.content })),
+    thread.thread_id,
+  );
+  const title =
+    thread.summary?.title && !isWeakThreadPrompt(thread.summary.title)
+      ? thread.summary.title
+      : summarizedTitle;
   const session: GenesisSession = {
     id: thread.thread_id,
     title,
     createdAt: threadCreatedAt,
+    preview: thread.summary?.preview ?? messages.at(-1)?.content?.toString() ?? "",
+    messageCount: thread.summary?.message_count ?? normalized.length,
+    question: thread.summary?.question ?? firstUser?.content ?? "",
+    lastAgentId: thread.summary?.last_agent_id,
   };
   return { session, messages: normalized };
 }
@@ -163,23 +215,52 @@ export interface GenesisSession {
   id: string;
   title: string;
   createdAt: number;
+  preview?: string;
+  messageCount?: number;
+  question?: string;
+  lastAgentId?: string;
 }
 
 export interface ModelOption {
   id: string;
   label: string;
+  provider?: string;
+  description?: string;
+  family?: string;
+  familySubtitle?: string;
+  compatibilityStatus?: "ready" | "requires_adapter";
+  compatibilityMessage?: string;
+  setupHint?: string;
+  selectable?: boolean;
   inputCost: number;
   outputCost: number;
 }
 
-interface GenesisUIState {
+export interface AgentOption {
+  id: string;
+  label: string;
+  endpoint: string;
+  inputCost: number;
+  outputCost: number;
+}
+
+interface GenesisCatalogState {
   isLoading: boolean;
   isSending: boolean;
+  agents: AgentOption[];
+  selectedAgentId: string;
+  setSelectedAgentId: (id: string) => void;
   models: ModelOption[];
+  defaultModelId: string;
   selectedModelId: string;
   setSelectedModelId: (id: string) => void;
   useTavily: boolean;
   setUseTavily: (value: boolean) => void;
+}
+
+interface GenesisConversationState {
+  isLoading: boolean;
+  isSending: boolean;
   sessions: GenesisSession[];
   currentSessionId: string;
   createSession: () => Promise<string | undefined>;
@@ -190,21 +271,32 @@ interface GenesisUIState {
   sendMessage: (content: string) => Promise<void>;
 }
 
-const GenesisUIContext = createContext<GenesisUIState | null>(null);
+type GenesisUIState = GenesisCatalogState & GenesisConversationState;
+
+const GenesisCatalogContext = createContext<GenesisCatalogState | null>(null);
+const GenesisConversationContext = createContext<GenesisConversationState | null>(null);
 
 export function GenesisUIProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSending, setIsSending] = useState<boolean>(false);
+  const [agents, setAgents] = useState<AgentOption[]>([]);
+  const [selectedAgentId, setSelectedAgentId] = useState<string>("");
   const [models, setModels] = useState<ModelOption[]>([]);
+  const [defaultModelId, setDefaultModelId] = useState<string>("");
   const [selectedModelId, setSelectedModelId] = useState<string>("");
   const [useTavily, setUseTavily] = useState<boolean>(true);
   const [sessions, setSessions] = useState<GenesisSession[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string>("");
   const [messagesBySession, setMessagesBySession] = useState<Record<string, GenesisMessage[]>>({});
   const { token, isReady: authReady, logout } = useAuth();
+  const selectedAgentRef = useRef<string>("");
   const selectedModelRef = useRef<string>("");
   const useTavilyRef = useRef<boolean>(useTavily);
-  const lastRunSettingsRef = useRef<Record<string, { modelId: string; useTavily: boolean }>>({});
+  const lastRunSettingsRef = useRef<Record<string, { agentId: string; modelId: string; useTavily: boolean }>>({});
+
+  useEffect(() => {
+    selectedAgentRef.current = selectedAgentId;
+  }, [selectedAgentId]);
 
   useEffect(() => {
     selectedModelRef.current = selectedModelId;
@@ -213,6 +305,29 @@ export function GenesisUIProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     useTavilyRef.current = useTavily;
   }, [useTavily]);
+
+  const loadAgents = useCallback(async () => {
+    if (!token) return;
+    const res = await fetch("/api/agents", {
+      cache: "no-store",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.status === 401) {
+      logout();
+      return;
+    }
+    if (!res.ok) return;
+    const data = (await res.json()) as AgentsResponse;
+    const mapped: AgentOption[] = (data.agents ?? []).map((agent) => ({
+      id: agent.id,
+      label: agent.label,
+      endpoint: agent.endpoint,
+      inputCost: agent.input_cost ?? 0,
+      outputCost: agent.output_cost ?? 0,
+    }));
+    setAgents(mapped);
+    setSelectedAgentId((prev) => (prev ? prev : mapped[0]?.id ?? ""));
+  }, [token, logout]);
 
   const loadModels = useCallback(async () => {
     if (!token) return;
@@ -229,11 +344,26 @@ export function GenesisUIProvider({ children }: { children: React.ReactNode }) {
     const mapped: ModelOption[] = (data.models ?? []).map((model) => ({
       id: model.id,
       label: model.label,
+      provider: model.provider,
+      description: model.description,
+      family: model.family,
+      familySubtitle: model.family_subtitle,
+      compatibilityStatus: model.compatibility_status,
+      compatibilityMessage: model.compatibility_message,
+      setupHint: model.setup_hint,
+      selectable: model.selectable,
       inputCost: model.input_cost ?? 0,
       outputCost: model.output_cost ?? 0,
     }));
+    const firstSelectableId = mapped.find((model) => model.selectable !== false)?.id ?? mapped[0]?.id ?? "";
     setModels(mapped);
-    setSelectedModelId((prev) => (prev ? prev : mapped[0]?.id ?? ""));
+    setDefaultModelId(data.default_model ?? firstSelectableId);
+    setSelectedModelId((prev) => {
+      if (prev && mapped.some((model) => model.id === prev && model.selectable !== false)) {
+        return prev;
+      }
+      return firstSelectableId;
+    });
   }, [token, logout]);
 
   const annotateWithLastRun = (threadId: string, messages: GenesisMessage[]) => {
@@ -251,39 +381,63 @@ export function GenesisUIProvider({ children }: { children: React.ReactNode }) {
     cloned[lastAssistantIndex] = {
       ...cloned[lastAssistantIndex],
       modelId: last.modelId,
+      agentId: last.agentId,
       usedTavily: last.useTavily,
     };
     return cloned;
   };
 
+  const purgeMissingThread = useCallback((threadId: string) => {
+    delete lastRunSettingsRef.current[threadId];
+    setSessions((prev) => prev.filter((session) => session.id !== threadId));
+    setCurrentSessionId((prevId) => (prevId === threadId ? "" : prevId));
+    setMessagesBySession((prev) => {
+      const next = { ...prev };
+      delete next[threadId];
+      return next;
+    });
+  }, []);
+
   const fetchThread = useCallback(
     async (threadId: string) => {
-      if (!token) return;
+      if (!token) return false;
       const res = await fetch(`/api/threads/${threadId}`, {
         headers: { Authorization: `Bearer ${token}` },
         cache: "no-store",
       });
       if (res.status === 401) {
         logout();
-        return;
+        return false;
       }
-      if (!res.ok) return;
+      if (res.status === 404) {
+        purgeMissingThread(threadId);
+        return false;
+      }
+      if (!res.ok) return false;
       const data = await res.json();
       const thread = data.thread;
-      if (!thread) return;
+      if (!thread) return false;
       const { messages, session } = normalizeThread(thread);
-      setMessagesBySession((prev) => ({ ...prev, [threadId]: annotateWithLastRun(threadId, messages) }));
+      setMessagesBySession((prev) => {
+        const existingMsgs = prev[threadId] ?? [];
+        const traceById = new Map(existingMsgs.filter((m) => m.trace).map((m) => [m.id, m.trace!]));
+        const annotated = annotateWithLastRun(threadId, messages);
+        const withTraces = annotated.map((m) => {
+          const t = traceById.get(m.id);
+          return t ? { ...m, trace: t } : m;
+        });
+        return { ...prev, [threadId]: withTraces };
+      });
       setSessions((prev) => {
         const exists = prev.find((s) => s.id === threadId);
         if (exists) {
-          return prev.map((s) =>
-            s.id === threadId ? { ...s, title: session.title, createdAt: session.createdAt } : s,
-          );
+          return prev.map((s) => (s.id === threadId ? { ...s, ...session } : s));
         }
         return [session, ...prev];
       });
+      return true;
     },
-    [token, logout],
+    [token, logout, purgeMissingThread],
   );
 
   const loadThreads = useCallback(async () => {
@@ -311,24 +465,19 @@ export function GenesisUIProvider({ children }: { children: React.ReactNode }) {
     });
     setSessions(nextSessions);
     setMessagesBySession(nextMessages);
+    let sessionToHydrate: string | null = null;
     setCurrentSessionId((prev) => {
       if (prev && nextSessions.some((session) => session.id === prev)) {
+        sessionToHydrate = prev;
         return prev;
       }
       return "";
     });
 
-    const threadIds = nextSessions.map((session) => session.id);
-    const batchSize = 5;
-    for (let i = 0; i < threadIds.length; i += batchSize) {
-      const chunk = threadIds.slice(i, i + batchSize);
-      await Promise.all(
-        chunk.map((id) =>
-          fetchThread(id).catch((error) => {
-            console.error("Falha ao hidratar thread", id, error);
-          }),
-        ),
-      );
+    if (sessionToHydrate) {
+      await fetchThread(sessionToHydrate).catch((error) => {
+        console.error("Falha ao hidratar thread ativa", sessionToHydrate, error);
+      });
     }
   }, [token, logout, fetchThread]);
 
@@ -347,7 +496,7 @@ export function GenesisUIProvider({ children }: { children: React.ReactNode }) {
     async function bootstrap() {
       setIsLoading(true);
       try {
-        await Promise.all([loadModels(), loadThreads()]);
+        await Promise.all([loadAgents(), loadModels(), loadThreads()]);
       } finally {
         if (!cancelled) {
           setIsLoading(false);
@@ -358,7 +507,7 @@ export function GenesisUIProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [authReady, token, loadModels, loadThreads]);
+  }, [authReady, token, loadAgents, loadModels, loadThreads]);
 
   const createSession = useCallback(async (): Promise<string | undefined> => {
     if (!token) return;
@@ -409,13 +558,18 @@ export function GenesisUIProvider({ children }: { children: React.ReactNode }) {
       const threadId = currentSessionId;
       if (!threadId) return;
 
+      const activeAgentId = selectedAgentRef.current || selectedAgentId || agents[0]?.id || "";
       const activeModelId = selectedModelRef.current || selectedModelId || models[0]?.id || "";
-      if (!activeModelId) {
-        console.error("Nenhum modelo selecionado para envio da mensagem.");
+      if (!activeAgentId || !activeModelId) {
+        console.error("Agente ou modelo não selecionado para envio da mensagem.");
         return;
       }
       const activeUseTavily = useTavilyRef.current;
-      lastRunSettingsRef.current[threadId] = { modelId: activeModelId, useTavily: activeUseTavily };
+      lastRunSettingsRef.current[threadId] = {
+        agentId: activeAgentId,
+        modelId: activeModelId,
+        useTavily: activeUseTavily,
+      };
 
       const optimistic: GenesisMessage = {
         id: `user-${Date.now()}`,
@@ -423,6 +577,7 @@ export function GenesisUIProvider({ children }: { children: React.ReactNode }) {
         content,
         timestamp: Date.now(),
         modelId: activeModelId,
+        agentId: activeAgentId,
         usedTavily: activeUseTavily,
       };
 
@@ -430,6 +585,16 @@ export function GenesisUIProvider({ children }: { children: React.ReactNode }) {
         const existing = prev[threadId] ?? [];
         return { ...prev, [threadId]: [...existing, optimistic] };
       });
+      const nextTitle = summarizeThreadTitleFromText(content);
+      if (nextTitle) {
+        setSessions((prev) =>
+          prev.map((session) =>
+            session.id === threadId && shouldReplaceSessionTitle(session.title)
+              ? { ...session, title: nextTitle, question: content }
+              : session,
+          ),
+        );
+      }
       setCurrentSessionId(threadId);
 
       setIsSending(true);
@@ -466,6 +631,48 @@ export function GenesisUIProvider({ children }: { children: React.ReactNode }) {
         });
       };
 
+      const materializeAssistantMessage = (text: string, trace?: TraceEvent[] | null) => {
+        const trimmed = text.trim();
+        if (!trimmed) return;
+
+        setMessagesBySession((prev) => {
+          const existing = prev[targetThreadId] ?? [];
+          const withoutThinking = existing.filter((msg) => msg.id !== thinkingMessageId);
+
+          if (streamMessageId) {
+            const id = streamMessageId;
+            return {
+              ...prev,
+              [targetThreadId]: withoutThinking.map((msg) =>
+                msg.id === id
+                  ? {
+                      ...msg,
+                      content: trimmed,
+                      modelId: activeModelId,
+                      agentId: activeAgentId,
+                      usedTavily: activeUseTavily,
+                      ...(trace ? { trace } : {}),
+                    }
+                  : msg,
+              ),
+            };
+          }
+
+          const fallbackAssistant: GenesisMessage = {
+            id: `assistant-local-${Date.now()}`,
+            role: "assistant",
+            content: trimmed,
+            timestamp: Date.now(),
+            modelId: activeModelId,
+            agentId: activeAgentId,
+            usedTavily: activeUseTavily,
+            ...(trace ? { trace } : {}),
+          };
+
+          return { ...prev, [targetThreadId]: [...withoutThinking, fallbackAssistant] };
+        });
+      };
+
       try {
         const res = await fetch(`/api/threads/${targetThreadId}/stream`, {
           method: "POST",
@@ -473,7 +680,12 @@ export function GenesisUIProvider({ children }: { children: React.ReactNode }) {
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify({ content, model: activeModelId, useTavily: activeUseTavily }),
+          body: JSON.stringify({
+            content,
+            model: activeModelId,
+            agentId: activeAgentId,
+            useTavily: activeUseTavily,
+          }),
         });
 
         if (res.status === 401) {
@@ -485,6 +697,9 @@ export function GenesisUIProvider({ children }: { children: React.ReactNode }) {
         if (!res.ok || !res.body) {
           const errorText = !res.ok ? await res.text() : "Resposta sem stream";
           removeThinkingMessage();
+          if (res.status === 404 && errorText.includes("Thread not found")) {
+            purgeMissingThread(targetThreadId);
+          }
           throw new Error(errorText || "Falha ao iniciar streaming");
         }
 
@@ -494,6 +709,55 @@ export function GenesisUIProvider({ children }: { children: React.ReactNode }) {
         let accumulatedText = "";
         let finalMessages: RawMessage[] | null = null;
         const traceEvents: TraceEvent[] = [];
+        const updateThinkingMessage = (trace: TraceEvent[]) => {
+          setMessagesBySession((prev) => {
+            const existing = prev[targetThreadId] ?? [];
+            return {
+              ...prev,
+              [targetThreadId]: existing.map((msg) =>
+                msg.id === thinkingMessageId ? { ...msg, trace: [...trace] } : msg,
+              ),
+            };
+          });
+        };
+        const processStreamRecord = (line: string) => {
+          if (!line.startsWith("data:")) return;
+          const jsonText = line.slice(line.indexOf("data:") + 5).trim();
+          if (!jsonText) return;
+          let payload: StreamEventPayload;
+          try {
+            payload = JSON.parse(jsonText) as StreamEventPayload;
+          } catch {
+            return;
+          }
+          if (payload.event === "trace") {
+            traceEvents.push({
+              type: payload.type as TraceEvent["type"],
+              node: payload.node,
+              tool: payload.tool,
+              input: payload.input,
+              output: payload.output,
+              ts: payload.ts ?? Date.now(),
+            });
+            if (streamMessageId) {
+              updateStreamMessage(accumulatedText, [...traceEvents]);
+            } else {
+              updateThinkingMessage(traceEvents);
+            }
+          } else if (payload.event === "chunk") {
+            const delta = payload.text ?? "";
+            if (!delta) return;
+            ensureStreamMessage();
+            accumulatedText += delta;
+            updateStreamMessage(accumulatedText, traceEvents.length > 0 ? [...traceEvents] : undefined);
+          } else if (payload.event === "final") {
+            if (Array.isArray(payload.messages)) {
+              finalMessages = payload.messages as RawMessage[];
+            }
+          } else if (payload.event === "error") {
+            throw new Error(payload.detail || "Erro no streaming");
+          }
+        };
 
         const ensureStreamMessage = () => {
           if (streamMessageId) return;
@@ -504,6 +768,7 @@ export function GenesisUIProvider({ children }: { children: React.ReactNode }) {
             content: "",
             timestamp: Date.now(),
             modelId: activeModelId,
+            agentId: activeAgentId,
             usedTavily: activeUseTavily,
           };
           setMessagesBySession((prev) => {
@@ -536,47 +801,20 @@ export function GenesisUIProvider({ children }: { children: React.ReactNode }) {
 
           for (const rawChunk of chunks) {
             const line = rawChunk.trim();
-            if (!line.startsWith("data:")) continue;
-            const jsonText = line.slice(line.indexOf("data:") + 5).trim();
-            if (!jsonText) continue;
-            let payload: StreamEventPayload;
-            try {
-              payload = JSON.parse(jsonText) as StreamEventPayload;
-            } catch {
-              continue;
-            }
-            if (payload.event === "trace") {
-              traceEvents.push({
-                type: payload.type as TraceEvent["type"],
-                node: payload.node,
-                tool: payload.tool,
-                input: payload.input,
-                output: payload.output,
-                ts: payload.ts ?? Date.now(),
-              });
-            } else if (payload.event === "chunk") {
-              const delta = payload.text ?? "";
-              if (!delta) continue;
-              ensureStreamMessage();
-              accumulatedText += delta;
-              updateStreamMessage(accumulatedText);
-            } else if (payload.event === "final") {
-              console.log("📦 Evento FINAL recebido:", payload);
-              if (Array.isArray(payload.messages)) {
-                finalMessages = payload.messages as RawMessage[];
-                console.log("📝 Total de mensagens recebidas:", finalMessages.length);
-              }
-            } else if (payload.event === "error") {
-              throw new Error(payload.detail || "Erro no streaming");
-            }
+            if (!line) continue;
+            processStreamRecord(line);
           }
+        }
+
+        const trailing = buffer.trim();
+        if (trailing) {
+          processStreamRecord(trailing);
         }
 
         // Captura trace antes de qualquer limpeza
         const capturedTrace = traceEvents.length > 0 ? [...traceEvents] : null;
 
         removeThinkingMessage();
-        removeStreamMessage();
 
         // Função auxiliar: aplica trace à última mensagem assistant da thread
         const applyTrace = (trace: TraceEvent[]) => {
@@ -593,28 +831,45 @@ export function GenesisUIProvider({ children }: { children: React.ReactNode }) {
           });
         };
 
-        if (finalMessages) {
-          const normalized = finalMessages
+        const finalMessagesList: RawMessage[] = finalMessages ?? [];
+
+        if (finalMessagesList.length > 0) {
+          const normalized = finalMessagesList
             .map((m, index) => normalizeMessage(m, index))
             .filter((msg): msg is GenesisMessage => Boolean(msg))
             .filter((msg) => msg.role === "assistant");
           const annotatedFinal = annotateWithLastRun(targetThreadId, normalized);
-          setMessagesBySession((prev) => {
-            const existing = prev[targetThreadId] ?? [];
-            const ids = new Set(existing.map((msg) => msg.id));
-            const merged = [...existing];
-            annotatedFinal.forEach((msg) => {
-              if (!ids.has(msg.id)) {
-                merged.push(msg);
-              }
+          if (annotatedFinal.length > 0) {
+            removeStreamMessage();
+            setMessagesBySession((prev) => {
+              const existing = prev[targetThreadId] ?? [];
+              const ids = new Set(existing.map((msg) => msg.id));
+              const merged = [...existing];
+              annotatedFinal.forEach((msg) => {
+                if (!ids.has(msg.id)) {
+                  merged.push(msg);
+                }
+              });
+              return { ...prev, [targetThreadId]: merged };
             });
-            return { ...prev, [targetThreadId]: merged };
-          });
+          } else {
+            materializeAssistantMessage(accumulatedText, capturedTrace);
+          }
           if (capturedTrace) applyTrace(capturedTrace);
           fetchThread(targetThreadId).catch(console.error);
         } else {
-          await fetchThread(targetThreadId);
-          if (capturedTrace) applyTrace(capturedTrace);
+          materializeAssistantMessage(accumulatedText, capturedTrace);
+          try {
+            await fetchThread(targetThreadId);
+            if (capturedTrace) applyTrace(capturedTrace);
+          } catch (error) {
+            console.error("Falha ao recarregar thread apos stream:", error);
+            if (streamMessageId) {
+              updateStreamMessage(accumulatedText, capturedTrace ?? undefined);
+            }
+          } finally {
+            removeStreamMessage();
+          }
         }
       } catch (error) {
         console.error("Erro ao enviar mensagem:", error);
@@ -634,18 +889,39 @@ export function GenesisUIProvider({ children }: { children: React.ReactNode }) {
         setIsSending(false);
       }
     },
-    [currentSessionId, fetchThread, selectedModelId, token, logout, models],
+    [agents, currentSessionId, fetchThread, logout, models, purgeMissingThread, selectedAgentId, selectedModelId, token],
   );
 
-  const value = useMemo<GenesisUIState>(
+  const catalogValue = useMemo<GenesisCatalogState>(
     () => ({
       isLoading,
       isSending,
+      agents,
+      selectedAgentId,
+      setSelectedAgentId,
       models,
+      defaultModelId,
       selectedModelId,
       setSelectedModelId,
       useTavily,
       setUseTavily,
+    }),
+    [
+      isLoading,
+      isSending,
+      agents,
+      selectedAgentId,
+      models,
+      defaultModelId,
+      selectedModelId,
+      useTavily,
+    ],
+  );
+
+  const conversationValue = useMemo<GenesisConversationState>(
+    () => ({
+      isLoading,
+      isSending,
       sessions,
       currentSessionId,
       createSession,
@@ -658,27 +934,46 @@ export function GenesisUIProvider({ children }: { children: React.ReactNode }) {
     [
       isLoading,
       isSending,
-      models,
-      selectedModelId,
-      useTavily,
       sessions,
       currentSessionId,
-      messagesBySession,
       createSession,
       selectSession,
       renameSession,
       deleteSession,
+      messagesBySession,
       sendMessage,
     ],
   );
 
-  return <GenesisUIContext.Provider value={value}>{children}</GenesisUIContext.Provider>;
+  return (
+    <GenesisCatalogContext.Provider value={catalogValue}>
+      <GenesisConversationContext.Provider value={conversationValue}>
+        {children}
+      </GenesisConversationContext.Provider>
+    </GenesisCatalogContext.Provider>
+  );
 }
 
-export function useGenesisUI() {
-  const context = useContext(GenesisUIContext);
+export function useGenesisCatalog() {
+  const context = useContext(GenesisCatalogContext);
   if (!context) {
-    throw new Error("useGenesisUI must be used within GenesisUIProvider");
+    throw new Error("useGenesisCatalog must be used within GenesisUIProvider");
   }
   return context;
 }
+
+export function useGenesisConversation() {
+  const context = useContext(GenesisConversationContext);
+  if (!context) {
+    throw new Error("useGenesisConversation must be used within GenesisUIProvider");
+  }
+  return context;
+}
+
+export function useGenesisUI(): GenesisUIState {
+  const catalog = useGenesisCatalog();
+  const conversation = useGenesisConversation();
+  return { ...catalog, ...conversation };
+}
+
+

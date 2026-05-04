@@ -47,7 +47,7 @@ AdaptaÃ§Ãµes em relaÃ§Ã£o ao original:
   - Adicionado: a tool LangChain (kb_search_tool) que os agentes usam
 """
 
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, List, Optional
 import os
 import hashlib
@@ -90,6 +90,11 @@ try:
 except ValueError:
     _hybrid_workers = 8
 _hybrid_executor = ThreadPoolExecutor(max_workers=max(2, _hybrid_workers))
+# Pool separado para a busca em múltiplas tabelas do fallback geral.
+# Isolado de _hybrid_executor para evitar deadlock: cada tarefa deste pool
+# pode chamar search_hybrid_rrf que submete ao _hybrid_executor — pools
+# independentes garantem que não há espera circular.
+_general_fallback_executor = ThreadPoolExecutor(max_workers=5)
 
 
 def _rrf_key(item: Dict[str, Any]) -> str:
@@ -701,6 +706,7 @@ def search_knowledge_base(
     threshold: Optional[float] = None,
     use_hyde: Optional[bool] = None,
     use_query_rewrite: Optional[bool] = None,
+    precomputed_embedding: Optional[List[float]] = None,
 ) -> List[Dict[str, Any]]:
     """Busca unificada no knowledge base.
     
@@ -763,7 +769,12 @@ def search_knowledge_base(
 
         query_embedding = None
         if run_search_type != "text":
-            query_embedding = embed_query(text_to_embed)
+            # Reutiliza embedding pré-computado quando disponível e HyDE não está ativo.
+            # HyDE gera um documento diferente da query original, então não pode reaproveitar.
+            if precomputed_embedding is not None and not run_use_hyde:
+                query_embedding = precomputed_embedding
+            else:
+                query_embedding = embed_query(text_to_embed)
 
         if run_search_type == "vector":
             return search_vector(query_embedding, table_name, limit, run_threshold)
@@ -819,10 +830,13 @@ def search_knowledge_base(
             )
         return _fuse_results_rrf(result_lists, max(limit * 2, limit + 2))
 
+    # Primeira passada: caminho quente e mais frequente.
+    # O query rewrite fica reservado para a segunda passada (fraca),
+    # reduzindo custo fixo sem perder a ferramenta quando o retrieval vier ruim.
     primary_raw = _run_search_with_optional_rewrite(
         query,
         _k,
-        enable_query_rewrite=_use_query_rewrite,
+        enable_query_rewrite=False,
     )
     primary = _postprocess_results(query, primary_raw, _k)
 
@@ -898,25 +912,19 @@ def search_general_knowledge_base(
     if mode != "text":
         query_embedding = embed_query(base_query)
 
-    result_lists: List[List[Dict[str, Any]]] = []
-    for table_name in clean_tables:
-        try:
-            if mode == "vector":
-                rows = search_vector(query_embedding, table_name, limit_per_table, run_threshold)
-            elif mode == "text":
-                rows = search_text(base_query, table_name, limit_per_table)
-            else:
-                rows = search_hybrid_rrf(
-                    base_query,
-                    query_embedding,
-                    table_name,
-                    limit_per_table,
-                    run_threshold,
-                )
-        except Exception:
-            # Falha de tabela isolada não deve derrubar fallback geral.
-            continue
-
+    def _search_one_table(table_name: str) -> List[Dict[str, Any]]:
+        if mode == "vector":
+            rows = search_vector(query_embedding, table_name, limit_per_table, run_threshold)
+        elif mode == "text":
+            rows = search_text(base_query, table_name, limit_per_table)
+        else:
+            rows = search_hybrid_rrf(
+                base_query,
+                query_embedding,
+                table_name,
+                limit_per_table,
+                run_threshold,
+            )
         enriched: List[Dict[str, Any]] = []
         for item in rows:
             metadata = dict(item.get("metadata") or {})
@@ -928,6 +936,19 @@ def search_general_knowledge_base(
                     "metadata": metadata,
                 }
             )
+        return enriched
+
+    result_lists: List[List[Dict[str, Any]]] = []
+    futures = {
+        _general_fallback_executor.submit(_search_one_table, tbl): tbl
+        for tbl in clean_tables
+    }
+    for fut in as_completed(futures):
+        try:
+            enriched = fut.result()
+        except Exception:
+            # Falha de tabela isolada não deve derrubar fallback geral.
+            continue
         if enriched:
             result_lists.append(enriched)
 
@@ -988,16 +1009,17 @@ def create_kb_search_tool(
     _use_query_rewrite = _config.get("use_query_rewrite")
     
     @tool
-    def kb_search(query: str, k: int = 5) -> List[Dict[str, Any]]:
+    def kb_search(query: str, k: int = 5, embedding: Optional[List[float]] = None) -> List[Dict[str, Any]]:
         """Busca informaÃ§Ãµes na base de conhecimento.
-        
+
         Use esta ferramenta para encontrar informaÃ§Ãµes tÃ©cnicas
         relevantes para responder a pergunta do usuÃ¡rio.
-        
+
         ParÃ¢metros:
             query: Texto da busca (reformule se necessÃ¡rio para melhorar resultados).
             k: Quantidade de resultados (padrÃ£o 5, aumente para perguntas amplas).
-        
+            embedding: Embedding pré-computado (opcional, uso interno do orquestrador).
+
         Retorna:
             Lista de trechos relevantes da base de conhecimento,
             cada um com o texto (content) e score de relevÃ¢ncia.
@@ -1009,6 +1031,7 @@ def create_kb_search_tool(
             k=_k or k,
             use_hyde=_use_hyde,
             use_query_rewrite=_use_query_rewrite,
+            precomputed_embedding=embedding,
         )
     
     # Personaliza o nome e descriÃ§Ã£o da tool para o agente
@@ -1019,4 +1042,3 @@ def create_kb_search_tool(
     )
     
     return kb_search
-

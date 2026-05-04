@@ -35,18 +35,21 @@ DiferenÃ§a do original:
   do contrato de API de laticÃ­nios (response, agent_id, agent_name).
 """
 
+import asyncio
 import json
 import re
 import hashlib
 import secrets
 import time
+import os
+import traceback
 from typing import Any, Dict, Optional
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form, Header
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse, PlainTextResponse
 from pydantic import BaseModel
 
 from langchain_core.messages import HumanMessage, AIMessage
@@ -58,6 +61,10 @@ from app.config import (
     ENFORCE_WEBHOOK_API_KEY,
     WEBHOOK_API_KEY_HEADER,
     WEBHOOK_API_KEYS,
+    ORCHESTRATOR_CONTEXT_MEMORY_ENABLED,
+    ORCHESTRATOR_CONTEXT_MAX_MESSAGES,
+    ORCHESTRATOR_CONTEXT_MAX_CHARS,
+    ORCHESTRATOR_CONTEXT_TRIGGER_MAX_CHARS,
     validate_config,
 )
 from app.db.connection import init_pools, close_pools
@@ -65,6 +72,8 @@ from app.db.memory import load_memory, save_chat_turn, save_routing_log
 from app.agents.base_agent import get_agent_graph, get_all_agent_graphs
 from app.agents.orchestrator import get_orchestrator_graph
 from app.agents.agent_config import get_agent_by_id
+from app.llm.model_selector import resolve_chat_model
+from app.llm.model_selector import get_allowed_chat_models
 from app.rag.ingest import ingest_text
 
 
@@ -167,6 +176,7 @@ class ChatRequest(BaseModel):
     # Aceita chat_id/chatId para facilitar integracao com Message Service.
     chat_id: Optional[str] = None
     chatId: Optional[str] = None
+    model: Optional[str] = None
     user_profile: Optional[Dict[str, Any]] = None
 
 
@@ -254,6 +264,162 @@ def _inject_user_profile(message: str, user_profile: Optional[Dict[str, Any]]) -
     return message + profile_text
 
 
+def _strip_profile_suffix(text: str) -> str:
+    if "\n[Perfil" in text:
+        return text.split("\n[Perfil", 1)[0]
+    return text
+
+
+def _normalize_context_probe(text: str) -> str:
+    cleaned = _strip_profile_suffix(text or "")
+    return re.sub(r"\s+", " ", cleaned).strip().lower()
+
+
+def _looks_like_context_dependent_followup(message: str) -> bool:
+    if not ORCHESTRATOR_CONTEXT_MEMORY_ENABLED:
+        return False
+
+    text = _normalize_context_probe(message)
+    if not text:
+        return False
+
+    # Follow-ups realmente dependentes do histórico costumam ser curtos e
+    # anafóricos. Mensagens longas/independentes seguem no fast-path sem memória.
+    if len(text) > max(40, int(ORCHESTRATOR_CONTEXT_TRIGGER_MAX_CHARS)):
+        return False
+
+    strong_phrases = (
+        "no caso anterior",
+        "no contexto anterior",
+        "do que falamos",
+        "o que falamos antes",
+        "o que conversamos",
+        "sobre o que conversamos",
+        "conversamos recentemente",
+        "falamos recentemente",
+        "me explique sobre o que conversamos",
+        "me lembre do que conversamos",
+        "resuma o que conversamos",
+        "resuma o que falamos",
+        "retome o que falamos",
+        "continue de onde paramos",
+        "que voce falou",
+        "que você falou",
+        "compare com",
+        "comparando com",
+        "em relacao ao anterior",
+        "em relação ao anterior",
+        "sobre isso",
+        "sobre o anterior",
+        "nesse caso",
+        "neste caso",
+        "mesmo caso",
+        "mesma coisa",
+        "isso muda",
+        "isso vale",
+        "isso se aplica",
+    )
+    if any(phrase in text for phrase in strong_phrases):
+        return True
+
+    followup_prefixes = (
+        "e no caso",
+        "e quanto",
+        "e para",
+        "e se",
+        "e no ",
+        "agora",
+        "entao",
+        "então",
+        "nesse caso",
+        "neste caso",
+        "sobre isso",
+        "compare",
+        "comparando",
+    )
+    if any(text.startswith(prefix) for prefix in followup_prefixes):
+        return True
+
+    # Curto + demonstrativo costuma indicar anáfora real.
+    demonstratives = ("isso", "isto", "esse", "essa", "aquele", "aquela", "anterior")
+    return any(token in text for token in demonstratives) and len(text.split()) <= 12
+
+
+def _truncate_memory_text(text: str, max_chars: int) -> str:
+    compact = re.sub(r"\s+", " ", (text or "")).strip()
+    if len(compact) <= max_chars:
+        return compact
+    return compact[: max(0, max_chars - 3)].rstrip() + "..."
+
+
+def _select_orchestrator_context_lines(history: list[dict[str, str]]) -> list[str]:
+    max_messages = max(0, int(ORCHESTRATOR_CONTEXT_MAX_MESSAGES))
+    char_budget = max(0, int(ORCHESTRATOR_CONTEXT_MAX_CHARS))
+    if max_messages == 0 or char_budget == 0:
+        return []
+
+    per_message_cap = min(320, max(120, char_budget // max(1, max_messages)))
+    selected: list[str] = []
+    used_chars = 0
+
+    for item in reversed(history or []):
+        role = str(item.get("role", "")).strip().lower()
+        if role not in {"human", "ai"}:
+            continue
+
+        content = str(item.get("content", "")).strip()
+        if not content:
+            continue
+
+        if role == "human":
+            content = _strip_profile_suffix(content)
+
+        label = "Usuario" if role == "human" else "Dairy AI"
+        line = f"{label}: {_truncate_memory_text(content, per_message_cap)}"
+        projected = used_chars + len(line) + 1
+
+        if selected and projected > char_budget:
+            break
+        if not selected and projected > char_budget:
+            line = _truncate_memory_text(line, char_budget)
+            projected = len(line) + 1
+
+        selected.append(line)
+        used_chars = projected
+
+        if len(selected) >= max_messages:
+            break
+
+    selected.reverse()
+    return selected
+
+
+def _build_orchestrator_input_messages(
+    session_id: str,
+    message: str,
+    user_profile: Optional[Dict[str, Any]],
+) -> list:
+    current_message = _inject_user_profile(message, user_profile)
+    if not _looks_like_context_dependent_followup(message):
+        return [HumanMessage(content=current_message)]
+
+    history = _load_history_safe(session_id)
+    context_lines = _select_orchestrator_context_lines(history)
+    if not context_lines:
+        return [HumanMessage(content=current_message)]
+
+    contextual_message = "\n".join(
+        [
+            "[Contexto recente da conversa]",
+            *context_lines,
+            "",
+            "[Pergunta atual]",
+            current_message,
+        ]
+    ).strip()
+    return [HumanMessage(content=contextual_message)]
+
+
 def _sanitize_math_for_ui(text: str) -> str:
     """Converte trechos matematicos em LaTeX para texto simples amigavel ao front."""
     if not text:
@@ -292,6 +458,17 @@ def _sanitize_math_for_ui(text: str) -> str:
     return out
 
 
+def _log_server_error(tag: str, exc: Exception) -> None:
+    """Loga stack trace completa no servidor sem expor detalhes ao cliente."""
+    print(f"[{tag}] {exc}")
+    print(traceback.format_exc())
+
+
+def _backend_failure_response(message: str, status_code: int = 500) -> PlainTextResponse:
+    """Resposta simples para facilitar o consumo pelo proxy/frontend."""
+    return PlainTextResponse(message, status_code=status_code)
+
+
 def _safe_int_list(value: Any) -> list[int]:
     if not isinstance(value, list):
         return []
@@ -320,6 +497,74 @@ def _estimate_routing_cost_usd(execution_plan: list[int], fallback_attempts: int
     passes = 1 + max(0, int(fallback_attempts or 0))
     estimate = classifier_cost + consolidation_cost + (planned_agents * passes * per_agent_call_cost)
     return round(estimate, 6)
+
+
+async def _run_bg_db_with_retry(
+    tag: str,
+    func: Any,
+    *args: Any,
+    attempts: int = 3,
+    base_delay_sec: float = 0.12,
+) -> None:
+    last_exc: Optional[Exception] = None
+    for attempt in range(1, max(1, attempts) + 1):
+        try:
+            await run_in_threadpool(func, *args)
+            return
+        except Exception as exc:
+            last_exc = exc
+            if attempt >= attempts:
+                break
+            await asyncio.sleep(base_delay_sec * attempt)
+
+    if last_exc is not None:
+        _log_server_error(f"{tag} attempts={attempts}", last_exc)
+
+
+async def _bg_save_chat_turn(
+    session_id: str,
+    agent_id: int,
+    agent_name: str,
+    user_message: str,
+    response_text: str,
+    elapsed_ms: int,
+) -> None:
+    """Persiste o turno de chat em background, sem bloquear o response ao usuário."""
+    await _run_bg_db_with_retry(
+        f"bg-save chat_turn {session_id}",
+        save_chat_turn,
+        session_id,
+        agent_id,
+        agent_name,
+        user_message,
+        response_text,
+        elapsed_ms,
+    )
+
+
+async def _bg_save_routing_log(payload: Dict[str, Any]) -> None:
+    """Persiste o routing_log em background, sem bloquear o response ao usuário."""
+    await _run_bg_db_with_retry(
+        f"bg-save routing_log {payload.get('session_id', '?')}",
+        save_routing_log,
+        payload["session_id"],
+        payload["user_message"],
+        payload["response_time_ms"],
+        payload["query_hash"],
+        payload["selected_agent_ids"],
+        payload["chosen_agent_ids"],
+        payload["execution_plan"],
+        payload["primary_agent_id"],
+        payload["primary_agent_name"],
+        payload["routing_confidence"],
+        payload["routing_bucket"],
+        payload["routing_reason"],
+        payload["routing_alternatives"],
+        payload["fallback_used"],
+        payload["fallback_attempts"],
+        payload["fallback_trigger"],
+        payload["cost_estimate_usd"],
+    )
 
 
 def _extract_routing_payload(
@@ -399,12 +644,16 @@ async def chat_agent(
     Response: ChatResponse (response, agent_id, agent_name)
     
     Erros:
-      404: agent_id nÃ£o existe
+      404: agent_id não existe
       500: erro interno no grafo
     """
     _verify_webhook_api_key(_api_key)
     start_time = time.time()
     session_id = _resolve_session_id(request)
+    try:
+        resolved_model = resolve_chat_model(request.model)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     
     # ---- 1. Validar agent_id ----
     agent_config = get_agent_by_id(agent_id)
@@ -416,7 +665,7 @@ async def chat_agent(
     
     agent_name = agent_config["name"]
     
-    # ---- 2. Carregar histÃ³rico da sessÃ£o ----
+    # ---- 2. Carregar histórico da sessão ----
     # Mesma tabela chat_memories que o N8N usa
     history = await run_in_threadpool(_load_history_safe, session_id)
     messages = _history_to_messages(history)
@@ -428,8 +677,8 @@ async def chat_agent(
     
     # ---- 3. Chamar o grafo do agente ----
     try:
-        graph = get_agent_graph(agent_id)
-        result = await graph.ainvoke({"messages": messages})
+        graph = get_agent_graph(agent_id, resolved_model)
+        result = await graph.ainvoke({"messages": messages, "llm_model": resolved_model})
         
         # Extrai a resposta (Ãºltima AIMessage)
         response_text = ""
@@ -444,28 +693,20 @@ async def chat_agent(
                     break
         
     except Exception as e:
-        # Erro no grafo: retorna mensagem amigÃ¡vel
-        # Em produÃ§Ã£o, logar o erro completo (nÃ£o print)
-        print(f"[agent-{agent_id}] Erro: {e}")
-        response_text = (
-            "NÃ£o foi possÃ­vel processar sua pergunta no momento. "
-            "Por favor, tente novamente."
+        _log_server_error(f"agent-{agent_id}", e)
+        return _backend_failure_response(
+            "Não foi possível processar sua pergunta no momento. Por favor, tente novamente.",
+            status_code=500,
         )
     
     response_text = _sanitize_math_for_ui(response_text)
 
-    # ---- 4. Salvar no histÃ³rico ----
+    # ---- 4. Salvar no histórico (background — não bloqueia o response) ----
     elapsed_ms = int((time.time() - start_time) * 1000)
-    await run_in_threadpool(
-        save_chat_turn,
-        session_id,
-        agent_id,
-        agent_name,
-        request.message,
-        response_text,
-        elapsed_ms,
-    )
-    
+    asyncio.create_task(_bg_save_chat_turn(
+        session_id, agent_id, agent_name, request.message, response_text, elapsed_ms
+    ))
+
     # ---- 6. Retornar response ----
     return ChatResponse(
         response=response_text,
@@ -488,21 +729,25 @@ async def chat_orchestrator(
     O orquestrador pode consultar 1 a 3 agentes por pergunta.
     O response inclui o agent_id do agente PRINCIPAL (mais relevante).
     Se consultou Agente 3 + Agente 1, o agent_id no response Ã© 3
-    (o primeiro da lista ordenada por relevÃ¢ncia).
+    (o primeiro da lista ordenada por relevância).
     Se foi conversa geral, agent_id Ã© 0.
     """
     _verify_webhook_api_key(_api_key)
     start_time = time.time()
     session_id = _resolve_session_id(request)
     orchestrator_output: Dict[str, Any] = {}
+    try:
+        resolved_model = resolve_chat_model(request.model)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     
-    # Carrega histÃ³rico
-    history = await run_in_threadpool(_load_history_safe, session_id)
-    messages = _history_to_messages(history)
-    messages.append(
-        HumanMessage(
-            content=_inject_user_profile(request.message, request.user_profile)
-        )
+    # Memória seletiva do orquestrador:
+    # - perguntas independentes seguem no fast-path sem I/O de memória
+    # - follow-ups reais recebem apenas um contexto recente e compacto
+    messages = _build_orchestrator_input_messages(
+        session_id=session_id,
+        message=request.message,
+        user_profile=request.user_profile,
     )
     
     # Chama o orquestrador
@@ -510,6 +755,7 @@ async def chat_orchestrator(
         graph = get_orchestrator_graph()
         result = await graph.ainvoke({
             "messages": messages,
+            "llm_model": resolved_model,
             "user_profile": request.user_profile,
         })
         orchestrator_output = dict(result or {})
@@ -520,26 +766,17 @@ async def chat_orchestrator(
         agent_name = result.get("primary_agent_name", "Assistente Geral")
         
     except Exception as e:
-        print(f"[orquestrador] Erro: {e}")
-        response_text = (
-            "NÃ£o foi possÃ­vel processar sua pergunta no momento. "
-            "Por favor, tente novamente."
+        _log_server_error("orquestrador", e)
+        return _backend_failure_response(
+            "Não foi possível processar sua pergunta no momento. Por favor, tente novamente.",
+            status_code=500,
         )
-        agent_id = 0
-        agent_name = "Assistente Geral"
     
-    # Salva histÃ³rico e log
+    # Salva histórico e log em background — não bloqueia o response ao usuário.
     elapsed_ms = int((time.time() - start_time) * 1000)
-    await run_in_threadpool(
-        save_chat_turn,
-        session_id,
-        agent_id,
-        agent_name,
-        request.message,
-        response_text,
-        elapsed_ms,
-    )
-
+    asyncio.create_task(_bg_save_chat_turn(
+        session_id, agent_id, agent_name, request.message, response_text, elapsed_ms
+    ))
     try:
         payload = _extract_routing_payload(
             request_message=request.message,
@@ -549,29 +786,10 @@ async def chat_orchestrator(
             default_agent_name=agent_name,
         )
         payload["session_id"] = session_id
-        await run_in_threadpool(
-            save_routing_log,
-            payload["session_id"],
-            payload["user_message"],
-            payload["response_time_ms"],
-            payload["query_hash"],
-            payload["selected_agent_ids"],
-            payload["chosen_agent_ids"],
-            payload["execution_plan"],
-            payload["primary_agent_id"],
-            payload["primary_agent_name"],
-            payload["routing_confidence"],
-            payload["routing_bucket"],
-            payload["routing_reason"],
-            payload["routing_alternatives"],
-            payload["fallback_used"],
-            payload["fallback_attempts"],
-            payload["fallback_trigger"],
-            payload["cost_estimate_usd"],
-        )
+        asyncio.create_task(_bg_save_routing_log(payload))
     except Exception as e:
-        print(f"[routing-log] Aviso: falha ao registrar log estruturado: {e}")
-    
+        _log_server_error("routing-log payload", e)
+
     return ChatResponse(
         response=response_text,
         agent_id=agent_id,
@@ -602,6 +820,10 @@ async def chat_agent_stream(
     _verify_webhook_api_key(_api_key)
     start_time = time.time()
     session_id = _resolve_session_id(request)
+    try:
+        resolved_model = resolve_chat_model(request.model)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     agent_config = get_agent_by_id(agent_id)
     if not agent_config:
@@ -619,13 +841,13 @@ async def chat_agent_stream(
         )
     )
 
-    graph = get_agent_graph(agent_id)
+    graph = get_agent_graph(agent_id, resolved_model)
 
     async def generate():
         accumulated_raw = ""
         emitted_clean = ""
         try:
-            async for event in graph.astream_events({"messages": messages}, version="v2"):
+            async for event in graph.astream_events({"messages": messages, "llm_model": resolved_model}, version="v2"):
                 ev = event["event"]
                 node = event.get("metadata", {}).get("langgraph_node", "")
                 ts = int(time.time() * 1000)
@@ -691,16 +913,10 @@ async def chat_agent_stream(
                 yield f"data: {json.dumps({'event': 'chunk', 'text': delta})}\n\n"
 
         elapsed_ms = int((time.time() - start_time) * 1000)
-        await run_in_threadpool(
-            save_chat_turn,
-            session_id,
-            agent_id,
-            agent_name,
-            request.message,
-            accumulated,
-            elapsed_ms,
-        )
-
+        # Salva em background: o evento final chega ao usuário imediatamente.
+        asyncio.create_task(_bg_save_chat_turn(
+            session_id, agent_id, agent_name, request.message, accumulated, elapsed_ms
+        ))
         yield f"data: {json.dumps({'event': 'final', 'agent_id': agent_id, 'agent_name': agent_name})}\n\n"
 
     return StreamingResponse(
@@ -723,46 +939,56 @@ async def chat_orchestrator_stream(
     _verify_webhook_api_key(_api_key)
     start_time = time.time()
     session_id = _resolve_session_id(request)
+    try:
+        resolved_model = resolve_chat_model(request.model)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    history = await run_in_threadpool(_load_history_safe, session_id)
-    messages = _history_to_messages(history)
-    messages.append(
-        HumanMessage(
-            content=_inject_user_profile(request.message, request.user_profile)
-        )
+    # Mesmo racional do endpoint não-streaming: memória curta só entra quando
+    # a mensagem atual parece depender do contexto anterior.
+    messages = _build_orchestrator_input_messages(
+        session_id=session_id,
+        message=request.message,
+        user_profile=request.user_profile,
     )
 
     graph = get_orchestrator_graph()
 
     async def generate():
-        accumulated = ""
+        accumulated_raw = ""
+        last_sanitized = ""
+        chunks_sent = 0
         agent_id = 0
         agent_name = "Assistente Geral"
         orchestrator_output: Dict[str, Any] = {}
-        # NÃ³s que geram a resposta final visÃ­vel ao usuÃ¡rio.
-        # "classify" Ã© excluÃ­do pois emite JSON interno de roteamento.
         RESPONSE_NODES = {"respond_direct", "consolidate"}
-        # Captura o final_response quando consolidate retorna direto (sem LLM)
         fallback_response = ""
 
         try:
             async for event in graph.astream_events(
-                {"messages": messages, "user_profile": request.user_profile},
+                {"messages": messages, "user_profile": request.user_profile, "llm_model": resolved_model},
                 version="v2",
             ):
                 ev = event["event"]
                 node = event.get("metadata", {}).get("langgraph_node", "")
                 ts = int(time.time() * 1000)
 
-                # Tokens da resposta final (apenas nÃ³s de resposta)
+                # Tokens da resposta final — streaming token-a-token para o front.
+                # A sanitizacao de LaTeX opera sobre o texto acumulado completo e
+                # emite apenas o delta (texto novo), garantindo que sequencias LaTeX
+                # multi-token sejam substituidas corretamente antes de chegar ao front.
                 if ev == "on_chat_model_stream" and node in RESPONSE_NODES:
                     chunk = event["data"]["chunk"]
                     content = chunk.content if isinstance(chunk.content, str) else ""
                     tool_calls = getattr(chunk, "tool_call_chunks", [])
                     if content and not tool_calls:
-                        accumulated += content
-                        # Nao envia chunk bruto para o front; o texto sera emitido
-                        # uma vez no final, ja sanitizado para evitar LaTeX cru na UI.
+                        accumulated_raw += content
+                        sanitized_full = _sanitize_math_for_ui(accumulated_raw)
+                        delta = sanitized_full[len(last_sanitized):]
+                        if delta:
+                            last_sanitized = sanitized_full
+                            chunks_sent += 1
+                            yield f"data: {json.dumps({'event': 'chunk', 'text': delta})}\n\n"
 
                 # Captura agent_id final e fallback quando nÃ£o houve streaming
                 # (ex: consolidate com 1 agente retorna direto, sem chamar LLM)
@@ -771,7 +997,7 @@ async def chat_orchestrator_stream(
                     orchestrator_output = dict(output or {})
                     agent_id = output.get("primary_agent_id", 0)
                     agent_name = output.get("primary_agent_name", "Assistente Geral")
-                    if not accumulated:
+                    if not accumulated_raw:
                         fallback_response = output.get("final_response", "")
 
                 # TransiÃ§Ãµes de nÃ³ â€” apenas nÃ­vel raiz
@@ -795,40 +1021,36 @@ async def chat_orchestrator_stream(
                         chunks = json.loads(output_str) if isinstance(output_str, str) else output_str
                         if isinstance(chunks, list):
                             snippets = []
-                            for c in chunks[:3]:
-                                content = c.get("content", "")[:200] if isinstance(c, dict) else str(c)[:200]
+                            for c in chunks[:6]:
+                                content = c.get("content", "") if isinstance(c, dict) else str(c)
                                 score = c.get("score", "") if isinstance(c, dict) else ""
                                 source = (c.get("metadata", {}) or {}).get("source", "") if isinstance(c, dict) else ""
                                 snippets.append({"content": content, "score": round(score, 4) if score else None, "source": source})
                             output_str = json.dumps(snippets, ensure_ascii=False)
                         else:
-                            output_str = str(output_str)[:600]
+                            output_str = str(output_str)
                     except Exception:
-                        output_str = str(output_str)[:600]
+                        output_str = str(output_str)
                     yield f"data: {json.dumps({'event': 'trace', 'type': 'tool_result', 'tool': tool_name, 'output': output_str, 'ts': ts})}\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'event': 'error', 'detail': str(e)})}\n\n"
             return
 
-        # Emite resposta final unica, sanitizada para UI (sem LaTeX cru).
-        if not accumulated and fallback_response:
-            accumulated = fallback_response
-        if accumulated:
-            cleaned = _sanitize_math_for_ui(accumulated)
-            accumulated = cleaned
-            yield f"data: {json.dumps({'event': 'chunk', 'text': cleaned})}\n\n"
+        # Resolve texto final para persistencia no DB (sanitizado, sem LaTeX).
+        if not accumulated_raw and fallback_response:
+            accumulated_raw = fallback_response
+        accumulated = _sanitize_math_for_ui(accumulated_raw) if accumulated_raw else ""
+
+        # Se nenhum token foi emitido em tempo real (ex: consolidate sem LLM,
+        # respond_direct retornando direto da chain), envia o bloco completo agora.
+        if chunks_sent == 0 and accumulated:
+            yield f"data: {json.dumps({'event': 'chunk', 'text': accumulated})}\n\n"
 
         elapsed_ms = int((time.time() - start_time) * 1000)
-        await run_in_threadpool(
-            save_chat_turn,
-            session_id,
-            agent_id,
-            agent_name,
-            request.message,
-            accumulated,
-            elapsed_ms,
-        )
-
+        # Salva em background: o evento final chega ao usuário imediatamente.
+        asyncio.create_task(_bg_save_chat_turn(
+            session_id, agent_id, agent_name, request.message, accumulated, elapsed_ms
+        ))
         try:
             payload = _extract_routing_payload(
                 request_message=request.message,
@@ -838,28 +1060,9 @@ async def chat_orchestrator_stream(
                 default_agent_name=agent_name,
             )
             payload["session_id"] = session_id
-            await run_in_threadpool(
-                save_routing_log,
-                payload["session_id"],
-                payload["user_message"],
-                payload["response_time_ms"],
-                payload["query_hash"],
-                payload["selected_agent_ids"],
-                payload["chosen_agent_ids"],
-                payload["execution_plan"],
-                payload["primary_agent_id"],
-                payload["primary_agent_name"],
-                payload["routing_confidence"],
-                payload["routing_bucket"],
-                payload["routing_reason"],
-                payload["routing_alternatives"],
-                payload["fallback_used"],
-                payload["fallback_attempts"],
-                payload["fallback_trigger"],
-                payload["cost_estimate_usd"],
-            )
+            asyncio.create_task(_bg_save_routing_log(payload))
         except Exception as e:
-            print(f"[routing-log] Aviso: falha ao registrar log estruturado: {e}")
+            _log_server_error("routing-log payload", e)
 
         yield f"data: {json.dumps({'event': 'final', 'agent_id': agent_id, 'agent_name': agent_name})}\n\n"
 
@@ -1024,7 +1227,8 @@ async def health():
         details["supabase"] = "connected"
     except Exception as e:
         status = "degraded"
-        details["supabase"] = f"error: {e}"
+        details["supabase"] = "unavailable"
+        _log_server_error("health supabase", e)
     
     try:
         from app.db.connection import get_hetzner_conn
@@ -1034,13 +1238,83 @@ async def health():
         details["hetzner"] = "connected"
     except Exception as e:
         status = "degraded"
-        details["hetzner"] = f"error: {e}"
-    
-    return {
+        details["hetzner"] = "unavailable"
+        _log_server_error("health hetzner", e)
+
+    payload = {
         "status": status,
         "agents": 7,
         "version": "1.0.0",
         "databases": details,
+    }
+    return JSONResponse(status_code=200 if status == "ok" else 503, content=payload)
+
+
+@app.get("/console/models/status")
+async def console_models_status(
+    _api_key: Optional[str] = Header(default=None, alias=WEBHOOK_API_KEY_HEADER),
+):
+    """Status real dos modelos permitidos no backend para consumo do console Next."""
+    _verify_webhook_api_key(_api_key)
+
+    allowed_models = get_allowed_chat_models()
+    has_openai_key = bool((os.getenv("OPENAI_API_KEY") or "").strip())
+    has_compatible_gateway = any(
+        (os.getenv(var_name) or "").strip()
+        for var_name in ("OPENAI_BASE_URL", "OPENAI_API_BASE", "OPENROUTER_BASE_URL")
+    )
+
+    items = []
+    for model_id in allowed_models:
+        normalized = model_id.lower()
+        provider = "OpenAI"
+        if "claude" in normalized:
+            provider = "Anthropic"
+        elif "llama" in normalized:
+            provider = "Meta"
+
+        is_openai_model = provider == "OpenAI"
+        is_ready = has_openai_key if is_openai_model else has_compatible_gateway
+
+        if is_openai_model:
+            compatibility_message = (
+                "Pronto no backend atual."
+                if is_ready
+                else "Atencao: falta configurar OPENAI_API_KEY no backend."
+            )
+            setup_hint = (
+                "Backend pronto: OPENAI_API_KEY configurada."
+                if is_ready
+                else "Para liberar este modelo, configure OPENAI_API_KEY no backend."
+            )
+        else:
+            compatibility_message = (
+                "Pronto via gateway compativel configurado no backend."
+                if is_ready
+                else "Requer gateway compativel no backend para este provider."
+            )
+            setup_hint = (
+                "Backend pronto: gateway compativel configurado para providers externos."
+                if is_ready
+                else "Para liberar este modelo, configure um gateway compativel no backend, como OPENAI_BASE_URL, OPENAI_API_BASE ou OPENROUTER_BASE_URL."
+            )
+
+        items.append(
+            {
+                "id": model_id,
+                "provider": provider,
+                "compatibility_status": "ready" if is_ready else "requires_adapter",
+                "compatibility_message": compatibility_message,
+                "setup_hint": setup_hint,
+                "selectable": is_ready,
+            }
+        )
+
+    return {
+        "models": items,
+        "default_model": os.getenv("LLM_MODEL", ""),
+        "has_openai_key": has_openai_key,
+        "has_compatible_gateway": has_compatible_gateway,
     }
 
 

@@ -13,13 +13,13 @@ export function Button({
   ...props
 }: ButtonProps) {
   const base =
-    "inline-flex items-center justify-center rounded-xl font-semibold uppercase tracking-[0.25em] transition-all focus:outline-none focus:ring-2 focus:ring-[rgba(16,134,173,0.4)] focus:ring-offset-2 focus:ring-offset-[#080e18] disabled:cursor-not-allowed disabled:opacity-50";
+    "inline-flex items-center justify-center rounded-xl font-semibold uppercase tracking-[0.25em] transition-all focus:outline-none focus:ring-2 focus:ring-[rgba(176,111,255,0.4)] focus:ring-offset-2 focus:ring-offset-[#0b0d14] disabled:cursor-not-allowed disabled:opacity-50";
   const variants = {
     primary:
-      "bg-gradient-to-r from-[#20336d] via-[#1a447c] to-[#1086ad] text-white shadow-[0_15px_35px_rgba(7,14,24,0.45)] hover:shadow-[0_20px_45px_rgba(8,20,40,0.6)]",
-    ghost: "bg-transparent text-[#dfdecf] hover:text-white hover:bg-white/5",
+      "bg-gradient-to-b from-[#b06fff] to-[#7b2cff] text-white shadow-[0_15px_35px_rgba(43,20,79,0.45)] hover:brightness-110 hover:shadow-[0_20px_45px_rgba(43,20,79,0.6)]",
+    ghost: "bg-transparent text-[#c9cdd6] hover:text-white hover:bg-white/5",
     outline:
-      "border border-white/20 text-[#dfdecf] hover:border-[#1086ad] hover:text-white hover:bg-[#1086ad]/10",
+      "border border-white/20 text-[#c9cdd6] hover:border-[#8b3dff] hover:text-white hover:bg-[#8b3dff]/10",
   } as const;
   const sizes = {
     sm: "h-8 px-3 text-[11px]",

@@ -9,7 +9,7 @@ export interface AgentCatalogItem {
 export const AGENT_CATALOG: AgentCatalogItem[] = [
   {
     id: "orquestrador",
-    label: "Assistente Geral (Orquestrador)",
+    label: "Orquestrador",
     endpoint: "/webhook/orquestrador",
     input_cost: 0,
     output_cost: 0,

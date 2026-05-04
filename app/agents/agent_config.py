@@ -87,20 +87,33 @@ AGENTS: List[Dict[str, Any]] = [
         "table_name": "embeddings_agente_1_queijos",
         "description": (
             "Especialista em tecnologia de fabricação de queijos. "
-            "Cobre processos de fabricação (coagulação, corte da massa, filagem, "
-            "prensagem, salga, maturação), rendimento, parâmetros de processo "
-            "(temperatura, pH, tempo), equipamentos e boas práticas de fabricação. "
-            "Tipos: mussarela, minas frescal, prato, coalho, provolone, "
-            "parmesão, gorgonzola, brie, camembert."
+            "Base cobre três categorias: "
+            "(1) Queijos duros de longa maturação: Parmesão, Grana Padano, Reggianito, Sbrinz, Sardo — "
+            "soro-fermento natural, maturação 6–24 meses, controle de Clostridium, flora autóctone, "
+            "prensagem intensa, casca tratada; "
+            "(2) Queijos semiduros: Prato, Gouda, Edam, Reino, Mimolette, Estepe, Muenster — "
+            "maturação intermediária, salga em salmoura ou a seco, "
+            "proteólise e lipólise controladas, embalagem a vácuo; "
+            "(3) Queijos de massa filada / pasta filata: Mussarela brasileira, Pizza Cheese, "
+            "Mozzarella italiana — filagem, stretching, fusibilidade, browning, capacidade de "
+            "derretimento, acidificação biológica vs química, teor de umidade. "
+            "Tópicos transversais: rendimento (kg leite/kg queijo), coagulação enzimática, "
+            "corte da massa, dessoragem, prensagem, salga, maturação, defeitos técnicos "
+            "(trinca, estufamento, amargor, textura), denominações de origem (DOP/IGP/SIF)."
         ),
         "keywords": [
-            "queijo", "mussarela", "coalho", "coagulação", "filagem",
-            "maturação", "salga", "prensagem", "rendimento", "massa",
-            "fermento", "coalho", "soro", "cura", "defumação",
+            "queijo", "parmesão", "grana padano", "reggianito", "sbrinz", "sardo",
+            "prato", "gouda", "edam", "reino", "mimolette", "estepe", "muenster",
+            "mussarela", "mozzarella", "pizza cheese", "pasta filata",
+            "coagulação", "filagem", "stretching", "fusibilidade", "browning",
+            "maturação", "soro-fermento", "salga", "salmoura", "prensagem",
+            "rendimento", "massa", "dessoragem", "soro", "cura",
+            "Clostridium", "flora autóctone", "proteólise", "lipólise",
+            "acidificação", "umidade", "casca", "defeito",
         ],
         "search_config": {
-            # Busca semântica é suficiente para perguntas técnicas
-            # sobre processos de fabricação (conceituais, não terminológicas)
+            # Semântica pura cobre bem perguntas técnicas sobre processos (conceituais).
+            # Híbrido opcional se houver muitas consultas por nome exato de queijo.
         },
     },
     {

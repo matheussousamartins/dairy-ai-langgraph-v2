@@ -51,20 +51,285 @@ Hierarquia:
   agent_config.py (dados) → base_agent.py (constrói grafos) → webapp.py (expõe HTTP)
 """
 
+import json
+import re
+import unicodedata
 from typing import Dict, Any, Optional, List, Annotated
 from typing_extensions import TypedDict
 
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import AnyMessage, HumanMessage, AIMessage, SystemMessage
+from langchain_core.messages import AnyMessage, HumanMessage, AIMessage, SystemMessage, ToolMessage
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 
-from app.config import LLM_MODEL, AGENT_TEMPERATURE
+from app.config import (
+    LLM_MODEL,
+    AGENT_TEMPERATURE,
+    DEFAULT_SEARCH_TYPE,
+    RAG_EARLY_SKIP_WEAK_SEARCH_ENABLED,
+    RAG_EARLY_SKIP_WEAK_AGENT_IDS,
+    RAG_EARLY_SKIP_WEAK_MIN_QUERY_KEYWORDS,
+    RAG_EARLY_SKIP_WEAK_MIN_TOP_KEYWORD_HITS,
+    RAG_EARLY_SKIP_WEAK_HYBRID_MAX_SCORE,
+)
 from app.agents.agent_config import get_agent_by_id, get_search_config, AGENTS
 from app.agents.prompts import get_agent_prompt
 from app.rag.search import create_kb_search_tool
 from app.tools.calculations import get_calculation_tools
+
+
+_PT_STOPWORDS = {
+    "como", "qual", "quais", "para", "com", "sem", "uma", "uns", "umas",
+    "dos", "das", "de", "do", "da", "e", "ou", "o", "a", "os", "as",
+    "em", "no", "na", "nos", "nas", "por", "que", "se", "ao", "aos",
+    "sao", "são", "antes", "apos", "após", "deve", "devem", "ser",
+    "fazer", "tomar",
+}
+
+
+def _normalize_text_for_match(text: str) -> str:
+    normalized = (text or "").lower()
+    return re.sub(r"\s+", " ", normalized).strip()
+
+
+def _normalize_folded_text(text: str) -> str:
+    normalized = unicodedata.normalize("NFKD", text or "")
+    normalized = "".join(ch for ch in normalized if not unicodedata.combining(ch))
+    normalized = normalized.lower()
+    return re.sub(r"\s+", " ", normalized).strip()
+
+
+def _looks_like_greeting_only(text: str) -> bool:
+    current = _normalize_folded_text(_extract_current_user_segment(_strip_profile_suffix(text)))
+    if not current:
+        return False
+
+    current = re.sub(r"[.!?,;:]+", " ", current)
+    current = re.sub(r"\s+", " ", current).strip()
+    if not current:
+        return False
+
+    greeting_phrases = {
+        "oi",
+        "ola",
+        "olá",
+        "bom dia",
+        "boa tarde",
+        "boa noite",
+        "e ai",
+        "ei",
+        "hey",
+        "tudo bem",
+        "oi tudo bem",
+        "ola tudo bem",
+        "olá tudo bem",
+        "boa tarde tudo bem",
+        "boa noite tudo bem",
+        "bom dia tudo bem",
+    }
+    if current in greeting_phrases:
+        return True
+
+    tokens = current.split()
+    if len(tokens) > 5:
+        return False
+
+    allowed_tokens = {
+        "oi", "ola", "olá", "bom", "boa", "dia", "tarde", "noite",
+        "ei", "hey", "e", "ai", "tudo", "bem",
+    }
+    return all(token in allowed_tokens for token in tokens)
+
+
+def _strip_leading_agent_intro(text: str) -> str:
+    original = (text or "").strip()
+    if not original:
+        return original
+
+    intro_patterns = [
+        r"^\s*(?:ol[áa]!?\s*)?sou o dairy ai\b[^.?!]*[.?!]\s*",
+        r"^\s*sou o dairy ai\b[^.?!]*[.?!]\s*",
+    ]
+    trailing_help_patterns = [
+        r"^(?:posso ajudar[^.?!]*[.?!]\s*)+",
+        r"^(?:como posso ajudar[^.?!]*[.?!]\s*)+",
+    ]
+
+    stripped = original
+    removed_intro = False
+    for pattern in intro_patterns:
+        updated, count = re.subn(pattern, "", stripped, count=1, flags=re.IGNORECASE)
+        if count:
+            stripped = updated.lstrip()
+            removed_intro = True
+            break
+
+    if not removed_intro:
+        return original
+
+    for pattern in trailing_help_patterns:
+        stripped = re.sub(pattern, "", stripped, count=1, flags=re.IGNORECASE).lstrip()
+
+    if not stripped:
+        return original
+
+    if _normalize_folded_text(stripped) == _normalize_folded_text(original):
+        return original
+    return stripped
+
+
+def _extract_query_keywords(query: str) -> List[str]:
+    tokens = re.findall(r"[^\W_]+", _normalize_text_for_match(query), flags=re.UNICODE)
+    keywords: List[str] = []
+    seen = set()
+    for token in tokens:
+        if len(token) < 4 or token in _PT_STOPWORDS or token in seen:
+            continue
+        seen.add(token)
+        keywords.append(token)
+    return keywords
+
+
+def _keyword_hits_in_result(result: Dict[str, Any], keywords: List[str]) -> int:
+    content = _normalize_text_for_match(str(result.get("content", "")))
+    metadata = result.get("metadata") or {}
+    source = ""
+    if isinstance(metadata, dict):
+        source = _normalize_text_for_match(
+            " ".join(
+                str(metadata.get(key, ""))
+                for key in ("source", "title", "path")
+                if metadata.get(key)
+            )
+        )
+    haystack = f"{content} {source}".strip()
+    return sum(1 for kw in keywords if kw in haystack)
+
+
+def _strip_profile_suffix(text: str) -> str:
+    if "\n[Perfil" in text:
+        return text.split("\n[Perfil", 1)[0]
+    return text
+
+
+def _extract_current_user_segment(text: str) -> str:
+    marker = "\n[Pergunta atual]\n"
+    if marker in text:
+        return text.rsplit(marker, 1)[1].strip()
+    if text.strip().startswith("[Pergunta atual]"):
+        return text.split("[Pergunta atual]", 1)[1].strip()
+    return text
+
+
+def _build_contextual_search_query(text: str) -> str:
+    current = _strip_profile_suffix(_extract_current_user_segment(text)).strip()
+    if not current:
+        return ""
+
+    if "[Contexto recente da conversa]" not in text or "[Pergunta atual]" not in text:
+        return current
+
+    context_block = text.split("[Contexto recente da conversa]", 1)[1]
+    context_block = context_block.split("[Pergunta atual]", 1)[0]
+
+    user_snippets: List[str] = []
+    for raw_line in context_block.splitlines():
+        line = raw_line.strip()
+        line_norm = unicodedata.normalize("NFKD", line)
+        line_norm = "".join(ch for ch in line_norm if not unicodedata.combining(ch))
+        line_norm = line_norm.lower()
+        if not line_norm.startswith("usuario:"):
+            continue
+        snippet = line.split(":", 1)[1].strip()
+        snippet = _strip_profile_suffix(snippet)
+        if snippet:
+            user_snippets.append(snippet)
+
+    if not user_snippets:
+        return current
+
+    combined = " | ".join(user_snippets[-2:] + [current]).strip(" |")
+    combined = re.sub(r"\s+", " ", combined).strip()
+    if len(combined) <= 320:
+        return combined
+    return combined[:317].rstrip() + "..."
+
+
+def _looks_like_insufficient_answer(text: str) -> bool:
+    normalized = _normalize_folded_text(text)
+    if not normalized:
+        return True
+    markers = (
+        "nao encontrei informacoes especificas",
+        "nao encontrei informacao suficiente",
+        "nao tenho informacao suficiente",
+        "nao ha informacao suficiente",
+        "nao foi possivel identificar",
+        "com o meu conhecimento atual",
+        "nas normas consultadas",
+    )
+    return any(marker in normalized for marker in markers)
+
+
+def _is_regulatory_minimum_maturation_query(query: str) -> bool:
+    text = _normalize_folded_text(_build_contextual_search_query(query))
+    if not text:
+        return False
+
+    has_requirement = (
+        "exigid" in text
+        or "obrigat" in text
+        or "minimo legal" in text
+        or "periodo minimo" in text
+        or "prazo minimo" in text
+        or "tempo minimo" in text
+    )
+    has_maturation = "maturacao" in text
+    has_cheese_context = any(term in text for term in ("queijo", "grana", "parmesao", "parmesan"))
+    return has_requirement and has_maturation and has_cheese_context
+
+
+def _extract_tool_results(messages: List[AnyMessage]) -> List[Dict[str, Any]]:
+    results: List[Dict[str, Any]] = []
+    for msg in messages:
+        if not isinstance(msg, ToolMessage):
+            continue
+        content = msg.content
+        try:
+            parsed = json.loads(content) if isinstance(content, str) else content
+        except Exception:
+            continue
+        if not isinstance(parsed, list):
+            continue
+        for item in parsed:
+            if isinstance(item, dict):
+                results.append(item)
+    return results
+
+
+def _build_regulatory_general_rule_answer(query: str, tool_results: List[Dict[str, Any]]) -> Optional[str]:
+    if not _is_regulatory_minimum_maturation_query(query):
+        return None
+
+    for item in tool_results:
+        content = str(item.get("content", "") or "")
+        normalized = _normalize_folded_text(content)
+        if "sessenta dias" not in normalized:
+            continue
+        if "matur" not in normalized:
+            continue
+        if "riispoa" not in normalized and "§ 6" not in content and "paragrafo 6" not in normalized:
+            continue
+        return (
+            "Na ausencia de RTIQ especifico citado nos trechos recuperados para queijo tipo Grana, "
+            "a regra geral explicita na base e a do § 6º do RIISPOA (Decreto 9.013/2017): "
+            "o leite destinado a queijos submetidos a maturacao deve observar periodo nao inferior "
+            "a sessenta dias, ressalvadas excecoes amparadas por estudos tecnico-cientificos ou "
+            "regulamentos tecnicos especificos."
+        )
+
+    return None
 
 
 # ============================================================
@@ -73,33 +338,38 @@ from app.tools.calculations import get_calculation_tools
 
 class AgentState(TypedDict, total=False):
     """Estado interno do grafo ReAct de cada agente.
-    
+
     No projeto original (workflow.py linhas 176-183), o AgentState
     tem muitos campos (intent, slots, lead_atual, errors, context)
     porque o CRM precisa rastrear estado complexo entre nós.
-    
+
     Aqui, o estado é MUITO mais simples porque o agente faz apenas
     uma coisa: receber pergunta → buscar → responder.
-    
+
     Campos:
         messages: Histórico de mensagens da conversa.
                   Usa add_messages do LangGraph que faz append
                   automático (nova mensagem é adicionada, não substitui).
                   Inclui: SystemMessage (prompt), HumanMessage (pergunta),
                   AIMessage (resposta), ToolMessage (resultado da busca).
-        
+
         agent_prompt: System prompt do agente (injetado no início).
                       Específico por agente (queijos ≠ regulatórios).
+
+        precomputed_embedding: Embedding da query pré-computado pelo orquestrador.
+                               Quando presente, evita chamada duplicada à OpenAI.
     """
     messages: Annotated[List[AnyMessage], add_messages]
     agent_prompt: str
+    llm_model: str
+    precomputed_embedding: Optional[List[float]]
 
 
 # ============================================================
 # Construção do grafo ReAct para um agente
 # ============================================================
 
-def build_agent_graph(agent_id: int) -> Any:
+def build_agent_graph(agent_id: int, model_name: str = LLM_MODEL) -> Any:
     """Constrói o grafo LangGraph completo para um agente especialista.
     
     Esta função é o coração do módulo. Ela:
@@ -144,6 +414,7 @@ def build_agent_graph(agent_id: int) -> Any:
     table_name = agent_config["table_name"]
     agent_name = agent_config["name"]
     search_config = get_search_config(agent_id)
+    agent_search_type = (search_config.get("search_type") or DEFAULT_SEARCH_TYPE).strip().lower()
     
     # ---- Passo 2: Criar a tool de busca no KB ----
     # create_kb_search_tool é a factory do search.py
@@ -164,7 +435,7 @@ def build_agent_graph(agent_id: int) -> Any:
         tools.extend(get_calculation_tools())
     
     # ---- Passo 3: Criar o modelo LLM com tools ----
-    model = ChatOpenAI(model=LLM_MODEL, temperature=AGENT_TEMPERATURE)
+    model = ChatOpenAI(model=model_name, temperature=AGENT_TEMPERATURE)
     model_with_tools = model.bind_tools(tools)
 
     # Nome da tool (usado na chamada forçada do prepare)
@@ -193,6 +464,14 @@ def build_agent_graph(agent_id: int) -> Any:
             if isinstance(msg, HumanMessage):
                 user_text = msg.content
                 break
+        search_query = _build_contextual_search_query(user_text)
+
+        # Reutiliza embedding pré-computado pelo orquestrador quando disponível,
+        # evitando chamada duplicada à OpenAI para a mesma query.
+        tool_args: Dict[str, Any] = {"query": search_query}
+        precomputed = state.get("precomputed_embedding")
+        if precomputed:
+            tool_args["embedding"] = precomputed
 
         # AIMessage que força a chamada à tool sem passar pelo LLM
         forced_call = AIMessage(
@@ -200,13 +479,14 @@ def build_agent_graph(agent_id: int) -> Any:
             tool_calls=[{
                 "id": "direct_search_0",
                 "name": kb_tool_name,
-                "args": {"query": user_text},
+                "args": tool_args,
                 "type": "tool_call",
             }],
         )
 
         return {
             "agent_prompt": prompt_text,
+            "llm_model": model_name,
             "messages": [forced_call],
         }
 
@@ -228,6 +508,27 @@ def build_agent_graph(agent_id: int) -> Any:
             messages = [SystemMessage(content=prompt_text)] + messages
 
         response = await model_with_tools.ainvoke(messages)
+
+        last_user_text = ""
+        for msg in reversed(messages):
+            if isinstance(msg, HumanMessage):
+                last_user_text = msg.content
+                break
+
+        if isinstance(response.content, str) and last_user_text and not _looks_like_greeting_only(last_user_text):
+            stripped_intro = _strip_leading_agent_intro(response.content)
+            if stripped_intro != response.content:
+                response = AIMessage(content=stripped_intro)
+
+        if agent_id == 3 and isinstance(response.content, str):
+            if _looks_like_insufficient_answer(response.content):
+                fallback_answer = _build_regulatory_general_rule_answer(
+                    last_user_text,
+                    _extract_tool_results(messages),
+                )
+                if fallback_answer:
+                    response = AIMessage(content=fallback_answer)
+
         return {"messages": [response]}
 
     def should_continue(state: AgentState) -> str:
@@ -235,9 +536,89 @@ def build_agent_graph(agent_id: int) -> Any:
         if not messages:
             return "end"
         last_message = messages[-1]
+        # Limite: máximo 2 buscas por agente (1 forçada no prepare + 1 retry voluntário).
+        # Evita loops infinitos quando a base não tem evidência para a query.
+        tool_calls_done = sum(1 for m in messages if isinstance(m, ToolMessage))
+        if tool_calls_done >= 2:
+            return "end"
         if hasattr(last_message, "tool_calls") and last_message.tool_calls:
             return "continue"
         return "end"
+
+    def check_search_quality(state: AgentState) -> str:
+        """Após a primeira busca, verifica se os resultados têm relevância mínima.
+
+        Versão conservadora:
+        - só roda quando a feature flag está ligada;
+        - só vale para agentes explicitamente permitidos (default: base_geral);
+        - só atua em busca híbrida;
+        - exige query minimamente específica e baixa aderência lexical.
+
+        Assim cortamos apenas retries caros e pouco promissores, sem
+        transformar score baixo isolado em "sem evidência".
+        """
+        if not RAG_EARLY_SKIP_WEAK_SEARCH_ENABLED:
+            return "agent"
+        if agent_id not in RAG_EARLY_SKIP_WEAK_AGENT_IDS:
+            return "agent"
+        if agent_search_type not in {"hybrid", "hybrid_rrf"}:
+            return "agent"
+
+        messages = state.get("messages", [])
+        tool_msgs = [m for m in messages if isinstance(m, ToolMessage)]
+
+        # Aplica apenas na primeira busca; retries seguem fluxo normal.
+        if len(tool_msgs) != 1:
+            return "agent"
+
+        user_text = ""
+        for msg in reversed(messages):
+            if isinstance(msg, HumanMessage):
+                user_text = _build_contextual_search_query(msg.content)
+                break
+
+        keywords = _extract_query_keywords(user_text)
+        if len(keywords) < RAG_EARLY_SKIP_WEAK_MIN_QUERY_KEYWORDS:
+            return "agent"
+
+        content = tool_msgs[0].content
+        try:
+            results = json.loads(content) if isinstance(content, str) else content
+            if not results or not isinstance(results, list):
+                # Base retornou lista vazia → sem evidência.
+                return "skip_weak"
+
+            top_results = [
+                item for item in results[: min(3, len(results))]
+                if isinstance(item, dict)
+            ]
+            max_score = max(
+                float(r.get("score", 0.0)) for r in top_results
+            )
+            max_keyword_hits = max(
+                (_keyword_hits_in_result(item, keywords) for item in top_results),
+                default=0,
+            )
+
+            if (
+                max_score < RAG_EARLY_SKIP_WEAK_HYBRID_MAX_SCORE
+                and max_keyword_hits < RAG_EARLY_SKIP_WEAK_MIN_TOP_KEYWORD_HITS
+            ):
+                return "skip_weak"
+        except Exception:
+            # Não conseguiu parsear → deixa o LLM decidir (fail open).
+            return "agent"
+
+        return "agent"
+
+    def respond_no_evidence(state: AgentState) -> AgentState:
+        """Retorna AIMessage vazia para sinalizar ao orquestrador que não há evidência.
+
+        O orquestrador interpreta conteúdo vazio como success=False e
+        aciona o fallback adequado (general index / web / resposta padrão).
+        Poupa a chamada LLM de decisão + busca retry que seriam inúteis.
+        """
+        return {"messages": [AIMessage(content="")]}
 
     # ---- Passo 5: Montar o grafo ----
     tool_node = ToolNode(tools)
@@ -247,14 +628,23 @@ def build_agent_graph(agent_id: int) -> Any:
     graph.add_node("prepare", prepare)
     graph.add_node("agent", call_model)
     graph.add_node("tools", tool_node)
+    graph.add_node("skip_weak", respond_no_evidence)
 
     # Fluxo otimizado:
-    #   START → prepare → tools (busca direta) → agent (responde) → END
+    #   START → prepare → tools → [check_search_quality] → agent → END
+    #                                                     ↘ skip_weak → END
     #
     # prepare injeta a tool call já formada, pulando o LLM de decisão.
-    # O loop ReAct (agent ↔ tools) ainda existe como safety net.
+    # check_search_quality corta o ciclo quando a 1ª busca é fraca.
+    # O loop ReAct (agent ↔ tools) ainda existe como safety net nos demais casos.
     graph.set_entry_point("prepare")
-    graph.add_edge("prepare", "tools")  # Busca direta — sem LLM de decisão
+    graph.add_edge("prepare", "tools")
+
+    graph.add_conditional_edges(
+        "tools",
+        check_search_quality,
+        {"agent": "agent", "skip_weak": "skip_weak"},
+    )
 
     graph.add_conditional_edges(
         "agent",
@@ -262,7 +652,7 @@ def build_agent_graph(agent_id: int) -> Any:
         {"continue": "tools", "end": END},
     )
 
-    graph.add_edge("tools", "agent")
+    graph.add_edge("skip_weak", END)
 
     return graph.compile()
 
@@ -279,10 +669,10 @@ def build_agent_graph(agent_id: int) -> Any:
 # Preenchido sob demanda (lazy): o grafo é compilado na primeira
 # request para aquele agente e reutilizado nas seguintes.
 
-_agent_graphs: Dict[int, Any] = {}
+_agent_graphs: Dict[tuple[int, str], Any] = {}
 
 
-def get_agent_graph(agent_id: int) -> Any:
+def get_agent_graph(agent_id: int, model_name: str = LLM_MODEL) -> Any:
     """Retorna o grafo compilado de um agente (com cache).
     
     Primeira chamada: compila o grafo e salva no cache.
@@ -301,12 +691,13 @@ def get_agent_graph(agent_id: int) -> Any:
         webapp.py → ao receber POST /webhook/agente-{id}
         orchestrator.py → ao rotear para um sub-agente
     """
-    if agent_id not in _agent_graphs:
-        _agent_graphs[agent_id] = build_agent_graph(agent_id)
-    return _agent_graphs[agent_id]
+    cache_key = (agent_id, model_name)
+    if cache_key not in _agent_graphs:
+        _agent_graphs[cache_key] = build_agent_graph(agent_id, model_name=model_name)
+    return _agent_graphs[cache_key]
 
 
-def get_all_agent_graphs() -> Dict[int, Any]:
+def get_all_agent_graphs(model_names: Optional[List[str]] = None) -> Dict[tuple[int, str], Any]:
     """Compila e retorna todos os 6 grafos de agentes.
     
     Útil para pré-aquecer o cache no startup do servidor,
@@ -314,8 +705,11 @@ def get_all_agent_graphs() -> Dict[int, Any]:
     
     Usado por: webapp.py → no evento de startup.
     """
+    target_models = model_names or [LLM_MODEL]
     for agent_config in AGENTS:
         agent_id = agent_config["agent_id"]
-        if agent_id not in _agent_graphs:
-            _agent_graphs[agent_id] = build_agent_graph(agent_id)
+        for model_name in target_models:
+            cache_key = (agent_id, model_name)
+            if cache_key not in _agent_graphs:
+                _agent_graphs[cache_key] = build_agent_graph(agent_id, model_name=model_name)
     return _agent_graphs

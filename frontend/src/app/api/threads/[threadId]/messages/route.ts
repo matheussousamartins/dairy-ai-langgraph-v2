@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   appendAiMessage,
   appendHumanMessage,
+  deriveConsoleThreadOwnerId,
   getThread,
 } from "@/lib/thread-store";
 import { callDairyWebhook } from "@/lib/dairy-backend";
@@ -10,6 +11,7 @@ import { ensureAuthorized, getBearerToken, unauthorizedResponse } from "@/lib/se
 interface PostPayload {
   content: string;
   model: string;
+  agentId: string;
   useTavily: boolean;
 }
 
@@ -19,29 +21,32 @@ export async function POST(req: NextRequest, context: { params: Promise<{ thread
   }
   const auth = getBearerToken(req);
   if (!auth) return unauthorizedResponse();
+  const ownerId = deriveConsoleThreadOwnerId(auth);
 
   const { threadId } = await context.params;
   const body = (await req.json()) as Partial<PostPayload>;
 
-  if (!body?.content || !body.model) {
-    return NextResponse.json({ error: "Missing content or model" }, { status: 400 });
+  if (!body?.content || !body.model || !body.agentId) {
+    return NextResponse.json({ error: "Missing content, model or agentId" }, { status: 400 });
   }
-  const thread = getThread(threadId);
+  const thread = await getThread(ownerId, threadId);
   if (!thread) {
     return NextResponse.json({ error: "Thread not found" }, { status: 404 });
   }
 
   const sessionId = `frontend-${threadId}`;
-  appendHumanMessage(threadId, body.content);
+  const turnId = `turn-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  await appendHumanMessage(ownerId, threadId, body.content, turnId);
 
   try {
     const data = await callDairyWebhook(
-      body.model,
+      body.agentId,
       body.content,
       sessionId,
+      body.model,
       `Bearer ${auth}`,
     );
-    appendAiMessage(threadId, data.response ?? "", body.model);
+    await appendAiMessage(ownerId, threadId, data.response ?? "", body.model, body.agentId, undefined, turnId);
 
     return NextResponse.json({
       result: {
