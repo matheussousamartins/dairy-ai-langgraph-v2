@@ -361,9 +361,35 @@ _CLASSIFIER_FEW_SHOTS = [
 ]
 
 
+def _build_context_hint(conversation_context: Optional[str]) -> str:
+    """Extrai dominio provavel do historico recente para injetar no prompt."""
+    if not conversation_context:
+        return ""
+    norm = _normalize_text(conversation_context)
+    # Detecta dominio dominante no historico
+    if _is_strong_cheese_signal(norm):
+        return "queijos"
+    if _has_fermented_signal(norm):
+        return "fermentados"
+    if _has_quality_signal(norm):
+        return "qualidade"
+    if _has_defect_signal(norm):
+        return "defeitos"
+    if _is_strong_regulatory_signal(norm):
+        return "regulatorios"
+    if _has_formulation_signal(norm):
+        return "formulacao"
+    return ""
+
+
 @lru_cache(maxsize=SINGLE_AGENT_CLASSIFIER_CACHE_SIZE)
 def _llm_classify_cached(query_norm: str) -> Optional[List[str]]:
-    """Classifica com few-shot LLM. Cache LRU por query normalizada."""
+    """Classifica com few-shot LLM. Cache LRU por query normalizada (sem contexto)."""
+    return _llm_classify_core(query_norm, context_hint="")
+
+
+def _llm_classify_core(query_norm: str, context_hint: str) -> Optional[tuple]:
+    """Chamada LLM real com contexto opcional. Nao cacheada quando ha contexto."""
     try:
         from langchain_openai import ChatOpenAI
         from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
@@ -374,7 +400,16 @@ def _llm_classify_cached(query_norm: str) -> Optional[List[str]]:
             max_tokens=60,
         )
 
-        messages = [SystemMessage(content=_CLASSIFIER_SYSTEM)]
+        system = _CLASSIFIER_SYSTEM
+        if context_hint:
+            system = (
+                f"{_CLASSIFIER_SYSTEM}\n\n"
+                f"CONTEXTO DA CONVERSA: os turnos anteriores tratavam principalmente de '{context_hint}'. "
+                f"Se a query atual for ambigua ou curta (ex: 'qual o ph?', 'e a temperatura?'), "
+                f"prefira o dominio do contexto em vez de um dominio generico."
+            )
+
+        messages = [SystemMessage(content=system)]
         for q_example, answer in _CLASSIFIER_FEW_SHOTS:
             messages.append(HumanMessage(content=q_example))
             messages.append(AIMessage(content=answer))
@@ -391,14 +426,36 @@ def _llm_classify_cached(query_norm: str) -> Optional[List[str]]:
     return None
 
 
-async def _llm_classify_async(query_norm: str) -> Optional[List[str]]:
-    """Wrapper async com timeout para o classificador LLM."""
+async def _llm_classify_async(
+    query_norm: str,
+    conversation_context: Optional[str] = None,
+) -> Optional[List[str]]:
+    """Wrapper async com timeout para o classificador LLM.
+
+    Se conversation_context for fornecido e a query for curta/ambigua,
+    injeta hint de dominio no prompt para melhorar classificacao de follow-ups.
+    """
     loop = asyncio.get_event_loop()
+
+    # Usa contexto apenas para queries curtas/ambiguas (follow-ups tipicos)
+    query_words = len(query_norm.split())
+    context_hint = ""
+    if conversation_context and query_words <= 12:
+        context_hint = _build_context_hint(conversation_context)
+
     try:
-        result = await asyncio.wait_for(
-            loop.run_in_executor(None, _llm_classify_cached, query_norm),
-            timeout=SINGLE_AGENT_CLASSIFIER_TIMEOUT_SEC,
-        )
+        if context_hint:
+            # Com contexto: nao cacheia (contexto varia por sessao)
+            result = await asyncio.wait_for(
+                loop.run_in_executor(None, _llm_classify_core, query_norm, context_hint),
+                timeout=SINGLE_AGENT_CLASSIFIER_TIMEOUT_SEC,
+            )
+        else:
+            # Sem contexto: usa cache LRU normal
+            result = await asyncio.wait_for(
+                loop.run_in_executor(None, _llm_classify_cached, query_norm),
+                timeout=SINGLE_AGENT_CLASSIFIER_TIMEOUT_SEC,
+            )
         return list(result) if result else None
     except asyncio.TimeoutError:
         _log.warning("LLM classifier timeout apos %ss", SINGLE_AGENT_CLASSIFIER_TIMEOUT_SEC)
@@ -465,11 +522,18 @@ def classify_query_intent(query: str) -> QueryIntent:
     )
 
 
-async def classify_query_intent_async(query: str) -> QueryIntent:
+async def classify_query_intent_async(
+    query: str,
+    conversation_context: Optional[str] = None,
+) -> QueryIntent:
     """Classificacao async com LLM para casos ambiguos.
 
     Fast-path keyword para sinais inequivocos (saudacao, normas, fermentados puros).
     LLM apenas quando keyword nao resolve.
+
+    conversation_context: ultimas mensagens da conversa (Usuario: ... / Dairy AI: ...)
+    concatenadas. Usado para resolver follow-ups ambiguos como 'qual o pH?' quando
+    o contexto deixa claro que estamos falando de mussarela.
     """
     norm = _normalize_text(query)
 
@@ -479,11 +543,12 @@ async def classify_query_intent_async(query: str) -> QueryIntent:
         _log.debug("classify fast-path: %s -> %s", norm[:50], result.domain)
         return result
 
-    # LLM para casos ambiguos
-    dominios = await _llm_classify_async(norm)
+    # LLM para casos ambiguos — passa contexto para follow-ups curtos
+    dominios = await _llm_classify_async(norm, conversation_context=conversation_context)
     if dominios:
         intent = _dominios_to_intent(dominios, norm)
-        _log.debug("classify LLM: %s -> %s (tables=%s)", norm[:50], intent.domain, intent.search_tables)
+        _log.debug("classify LLM: %s -> %s (tables=%s, context=%s)",
+                   norm[:50], intent.domain, intent.search_tables, bool(conversation_context))
         return intent
 
     # Fallback final se LLM falhou

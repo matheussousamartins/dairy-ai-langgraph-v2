@@ -264,7 +264,8 @@ async def analyze_query(state: SingleAgentState) -> dict:
         context_lines = _extract_context_lines(state)
 
         resolved_query = contextualize_query_for_rag(raw_query, context_lines)
-        intent = await classify_query_intent_async(resolved_query)
+        conversation_context = "\n".join(context_lines) if context_lines else None
+        intent = await classify_query_intent_async(resolved_query, conversation_context=conversation_context)
 
         log_event("analyze_query_complete",
                   domain=intent.domain,
