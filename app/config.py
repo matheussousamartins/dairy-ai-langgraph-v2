@@ -543,20 +543,31 @@ MAX_INGEST_FILE_SIZE_MB = int(os.getenv("MAX_INGEST_FILE_SIZE_MB", "50"))
 # ============================================================
 # RAG_ARCHITECTURE controla qual pipeline e ativado no endpoint /webhook/orquestrador.
 # Os endpoints /webhook/agente-{N} sempre usam o agente especialista V1.
-# Valores: orchestrator (V1 padrao) ou single_agent (V2 simplificado)
-RAG_ARCHITECTURE = os.getenv("RAG_ARCHITECTURE", "orchestrator").strip().lower()
+# Valores: orchestrator (V1 padrao) ou single_agent (V2 producao)
+RAG_ARCHITECTURE = os.getenv("RAG_ARCHITECTURE", "single_agent").strip().lower()
 SINGLE_AGENT_MAX_TABLES = int(os.getenv("SINGLE_AGENT_MAX_TABLES", "2"))
-SINGLE_AGENT_K_PER_TABLE = int(os.getenv("SINGLE_AGENT_K_PER_TABLE", "5"))
+# Chunks por tabela na primeira busca. Na segunda tentativa (fallback) usa 2x.
+SINGLE_AGENT_K_PER_TABLE = int(os.getenv("SINGLE_AGENT_K_PER_TABLE", "8"))
 _sa_search_type_raw = os.getenv("SINGLE_AGENT_SEARCH_TYPE", "hybrid_rrf").strip()
 SINGLE_AGENT_SEARCH_TYPE = _sa_search_type_raw if _sa_search_type_raw else None
 SINGLE_AGENT_ANSWER_TIMEOUT_SEC = float(os.getenv("SINGLE_AGENT_ANSWER_TIMEOUT_SEC", "30"))
 SINGLE_AGENT_CLASSIFIER_MODEL = os.getenv("SINGLE_AGENT_CLASSIFIER_MODEL", "gpt-4o-mini").strip()
 SINGLE_AGENT_CLASSIFIER_TIMEOUT_SEC = float(os.getenv("SINGLE_AGENT_CLASSIFIER_TIMEOUT_SEC", "8"))
 SINGLE_AGENT_CLASSIFIER_CACHE_SIZE = int(os.getenv("SINGLE_AGENT_CLASSIFIER_CACHE_SIZE", "512"))
-# Busca regulatoria complementar — sempre executada em paralelo com a busca principal
-# Chunks incluidos no contexto apenas se score >= SINGLE_AGENT_REGULATORY_MIN_SCORE
-SINGLE_AGENT_REGULATORY_K = int(os.getenv("SINGLE_AGENT_REGULATORY_K", "2"))
+# Busca regulatoria complementar — sempre executada em paralelo com a busca principal.
+# Chunks incluidos no contexto apenas se score >= SINGLE_AGENT_REGULATORY_MIN_SCORE.
+SINGLE_AGENT_REGULATORY_K = int(os.getenv("SINGLE_AGENT_REGULATORY_K", "3"))
 SINGLE_AGENT_REGULATORY_MIN_SCORE = float(os.getenv("SINGLE_AGENT_REGULATORY_MIN_SCORE", "0.015"))
+# Avaliador de chunks — verifica se chunks respondem a pergunta antes do generate_answer.
+# Desative em ambientes com latencia muito restrita (SINGLE_AGENT_CHUNK_EVAL_ENABLED=false).
+SINGLE_AGENT_CHUNK_EVAL_ENABLED = (
+    os.getenv("SINGLE_AGENT_CHUNK_EVAL_ENABLED", "true").strip().lower() == "true"
+)
+# Qualidade minima para aceitar a resposta sem re-geracao em validate_response.
+# Valores: high, medium, low, unusable. Re-geracao dispara quando abaixo deste limiar.
+SINGLE_AGENT_MIN_QUALITY_FOR_REGEN = os.getenv(
+    "SINGLE_AGENT_MIN_QUALITY_FOR_REGEN", "medium"
+).strip().lower()
 
 
 # ============================================================

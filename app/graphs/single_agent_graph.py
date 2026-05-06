@@ -1,37 +1,31 @@
 # -*- coding: utf-8 -*-
 """
-graphs/single_agent_graph.py - Grafo LangGraph V2 (Single-Agent)
+graphs/single_agent_graph.py - Grafo LangGraph V2 (Single-Agent) — Producao
 
-Arquitetura simplificada sem orquestrador multiagente:
+Arquitetura:
 
   START
     analyze_query       - classifica intencao, resolve anafora (sem LLM quando possivel)
-    retrieve_context    - RAG multi-tabela com filtros de metadata por dominio
-    generate_answer     - 1 chamada LLM com todos os chunks consolidados
-    validate_response   - strip de frases proibidas + controle de qualidade minima
+    retrieve_context    - RAG multi-tabela + regulatorio complementar em paralelo
+    evaluate_chunks     - LLM leve verifica se chunks respondem a pergunta;
+                          se insuficientes, faz segunda busca com query expandida
+    generate_answer     - 1 chamada LLM com contexto validado e hierarquizado
+    validate_response   - strip de frases proibidas + re-geracao se qualidade baixa
   END
 
-Comparado ao orquestrador (V1):
-  V1: classify -> route -> execute (N agentes em paralelo) -> consolidate -> END
-  V2: analyze_query -> retrieve_context -> generate_answer -> validate_response -> END
-
-Ganhos esperados:
-  - Latencia: 1-2 chamadas LLM vs. 2-4 no orquestrador
-  - Custo: proporcional a reducao de chamadas
-  - Depurabilidade: fluxo linear, sem cascata de fallbacks
-
-O que e reutilizado do V1:
-  - search_knowledge_base / embed_query (rag/search.py) - inalterado
-  - contextualize_query_for_rag (rag/search.py) - inalterado
-  - metadata_filters.classify_query_intent (rag/metadata_filters.py) - novo, reusa orch_signals
-  - strip_prohibited_phrases / detect_question_type (agents/orch_quality.py) - inalterado
-  - observability (app/observability.py) - inalterado
+Camadas de qualidade:
+  1. Relevance gate     — chunks com score < threshold descartados antes do LLM
+  2. evaluate_chunks    — gpt-4o-mini verifica cobertura; dispara fallback se necessario
+  3. generate_answer    — prompt hierarquico tecnico/regulatorio + R1-R9
+  4. validate_response  — quality classifier + re-geracao em LOW/UNUSABLE
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import re
 from typing import Annotated, Any, Dict, List, Optional
 
 from langchain_core.messages import AnyMessage, HumanMessage, AIMessage, SystemMessage
@@ -52,6 +46,9 @@ from app.config import (
     SINGLE_AGENT_ANSWER_TIMEOUT_SEC,
     SINGLE_AGENT_REGULATORY_K,
     SINGLE_AGENT_REGULATORY_MIN_SCORE,
+    SINGLE_AGENT_CLASSIFIER_MODEL,
+    SINGLE_AGENT_CHUNK_EVAL_ENABLED,
+    SINGLE_AGENT_MIN_QUALITY_FOR_REGEN,
 )
 from app.rag.search import (
     search_knowledge_base,
@@ -66,6 +63,7 @@ from app.agents.orch_quality import (
     detect_question_type,
     strip_prohibited_phrases,
     classify_response_quality,
+    ResponseQuality,
 )
 from app.agents.orch_text import (
     _extract_current_user_segment,
@@ -80,6 +78,27 @@ from app.agents.orchestrator import (
 from app.observability import log_event, NodeTimer, LLMSlot
 
 _log = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Constantes do pipeline de qualidade
+# ---------------------------------------------------------------------------
+
+# Score minimo para chunks especialistas entrarem no contexto (hybrid_rrf)
+_SPECIALIST_MIN_SCORE_HYBRID = float(0.018)
+# Score minimo para chunks especialistas entrarem no contexto (vector/cosine)
+_SPECIALIST_MIN_SCORE_VECTOR = float(0.25)
+
+# Minimo de chunks especialistas validos para considerar retrieve bem-sucedido
+_MIN_SPECIALIST_CHUNKS_OK = 2
+
+# Timeout do avaliador de chunks (segundos)
+_CHUNK_EVAL_TIMEOUT_SEC = 6.0
+
+# Timeout da re-geracao em validate_response (segundos)
+_REGEN_TIMEOUT_SEC = 25.0
+
+# Quantos chunks usar na segunda busca (mais ampla)
+_FALLBACK_K_MULTIPLIER = 2
 
 
 # ---------------------------------------------------------------------------
@@ -100,6 +119,9 @@ class SingleAgentState(TypedDict, total=False):
     evidence_reduction_stats: Dict[str, Any]
     final_response: str
     response_quality: str
+    chunks_evaluated: bool
+    chunks_sufficient: bool
+    retrieval_attempts: int
 
 
 # ---------------------------------------------------------------------------
@@ -107,7 +129,6 @@ class SingleAgentState(TypedDict, total=False):
 # ---------------------------------------------------------------------------
 
 def _extract_user_query(state: SingleAgentState) -> str:
-    """Extrai a query do usuario do ultimo HumanMessage do estado."""
     messages = state.get("messages") or []
     for msg in reversed(messages):
         if isinstance(msg, HumanMessage):
@@ -118,7 +139,6 @@ def _extract_user_query(state: SingleAgentState) -> str:
 
 
 def _extract_context_lines(state: SingleAgentState) -> List[str]:
-    """Constroi linhas de contexto recente para resolucao de anafora."""
     messages = state.get("messages") or []
     lines: List[str] = []
     for msg in messages[:-1]:
@@ -130,7 +150,6 @@ def _extract_context_lines(state: SingleAgentState) -> List[str]:
 
 
 def _format_chunks_as_context(chunks: List[Dict[str, Any]]) -> str:
-    """Formata chunks recuperados em bloco de contexto para o LLM."""
     if not chunks:
         return ""
     parts: List[str] = []
@@ -141,6 +160,31 @@ def _format_chunks_as_context(chunks: List[Dict[str, Any]]) -> str:
     return "\n\n".join(parts)
 
 
+def _apply_relevance_gate(
+    chunks: List[Dict[str, Any]],
+    search_type: str,
+    is_regulatory: bool = False,
+) -> List[Dict[str, Any]]:
+    """Descarta chunks com score abaixo do threshold dinamico por tipo de busca."""
+    if is_regulatory:
+        # Regulatorio usa SINGLE_AGENT_REGULATORY_MIN_SCORE (ja aplicado no retrieve)
+        return chunks
+
+    if search_type == "hybrid_rrf":
+        min_score = _SPECIALIST_MIN_SCORE_HYBRID
+    elif search_type in ("vector", "hybrid_union"):
+        min_score = _SPECIALIST_MIN_SCORE_VECTOR
+    else:
+        # text search: sem gate por score
+        return chunks
+
+    filtered = [c for c in chunks if float(c.get("score") or 0.0) >= min_score]
+    dropped = len(chunks) - len(filtered)
+    if dropped > 0:
+        _log.debug("relevance_gate: descartou %d/%d chunks (score < %.4f)", dropped, len(chunks), min_score)
+    return filtered
+
+
 def _reduce_chunks_for_prompt(
     *,
     question: str,
@@ -148,11 +192,6 @@ def _reduce_chunks_for_prompt(
     agent_id: int,
     max_sentences: Optional[int] = None,
 ) -> tuple[str, Dict[str, Any]]:
-    """Compress retrieved chunks into answer-focused evidence.
-
-    The reducer is intentionally best-effort: when it cannot select useful
-    snippets, the caller can fall back to the original chunk text.
-    """
     original_text = _format_chunks_as_context(chunks)
     if not original_text.strip():
         return "", {
@@ -203,12 +242,12 @@ def _reduce_chunks_for_prompt(
     }
 
 
-def _get_llm(state: SingleAgentState) -> ChatOpenAI:
+def _get_llm(state: SingleAgentState, max_tokens: int = 1200) -> ChatOpenAI:
     model = state.get("llm_model") or LLM_MODEL
     return ChatOpenAI(
         model=model,
         temperature=AGENT_TEMPERATURE,
-        max_tokens=1200,
+        max_tokens=max_tokens,
     )
 
 
@@ -217,7 +256,7 @@ def _get_llm(state: SingleAgentState) -> ChatOpenAI:
 # ---------------------------------------------------------------------------
 
 async def analyze_query(state: SingleAgentState) -> dict:
-    """Classifica a intencao da query e resolve anafora. Sem chamada LLM na maioria dos casos."""
+    """Classifica intencao, resolve anafora. Sem LLM na maioria dos casos."""
     async with NodeTimer("analyze_query"):
         raw_query = _extract_user_query(state)
         context_lines = _extract_context_lines(state)
@@ -246,7 +285,10 @@ async def analyze_query(state: SingleAgentState) -> dict:
                 "messages": [AIMessage(content=greeting_response)],
             }
 
-        return {"query_intent": intent}
+        return {
+            "query_intent": intent,
+            "retrieval_attempts": 0,
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -254,11 +296,10 @@ async def analyze_query(state: SingleAgentState) -> dict:
 # ---------------------------------------------------------------------------
 
 async def retrieve_context(state: SingleAgentState) -> dict:
-    """Busca chunks nas tabelas do intent + busca regulatoria complementar em paralelo.
+    """Busca chunks nas tabelas do intent + regulatorio complementar em paralelo.
 
-    A busca regulatoria roda sempre (k=SINGLE_AGENT_REGULATORY_K), mas seus chunks
-    so entram no contexto se score >= SINGLE_AGENT_REGULATORY_MIN_SCORE.
-    Embedding pre-computado uma unica vez e reutilizado em todas as buscas.
+    Na segunda tentativa (retrieval_attempts >= 1), usa k ampliado e query
+    expandida para aumentar recall quando a primeira busca foi insuficiente.
     """
     intent: Optional[QueryIntent] = state.get("query_intent")
 
@@ -269,17 +310,21 @@ async def retrieve_context(state: SingleAgentState) -> dict:
     if not tables:
         return {"retrieved_chunks": [], "context_text": ""}
 
+    retrieval_attempts = state.get("retrieval_attempts") or 0
     raw_query = _extract_user_query(state)
     context_lines = _extract_context_lines(state)
     resolved_query = contextualize_query_for_rag(raw_query, context_lines)
 
+    # Na segunda tentativa: expande k e usa todas as tabelas de dominio
+    k_multiplier = _FALLBACK_K_MULTIPLIER if retrieval_attempts >= 1 else 1
     search_type = SINGLE_AGENT_SEARCH_TYPE or DEFAULT_SEARCH_TYPE
-    k = SINGLE_AGENT_K_PER_TABLE or DEFAULT_K
+    k = (SINGLE_AGENT_K_PER_TABLE or DEFAULT_K) * k_multiplier
+    k_reg = SINGLE_AGENT_REGULATORY_K * k_multiplier
+
     # hybrid_rrf usa scores RRF (max ~0.04) — threshold cosine nao se aplica
     effective_threshold = None if search_type == "hybrid_rrf" else MATCH_THRESHOLD
 
     async with NodeTimer("retrieve_context"):
-        # Embedding pre-computado uma vez, reutilizado em todas as tabelas
         precomputed: Optional[List[float]] = None
         if search_type != "text":
             try:
@@ -303,30 +348,27 @@ async def retrieve_context(state: SingleAgentState) -> dict:
                 _log.warning("retrieve_context: falha na tabela %s: %s", table, exc)
                 return []
 
-        # Tabelas principais + regulatoria complementar (se ainda nao esta nas principais)
         regulatory_is_primary = _TABLE_REGULATORIOS in tables
         all_tables_to_search = list(tables)
         if not regulatory_is_primary:
             all_tables_to_search.append(_TABLE_REGULATORIOS)
 
-        # Executa todas as buscas em paralelo via executor
         futures = []
         for table in all_tables_to_search:
-            is_regulatory_complement = (table == _TABLE_REGULATORIOS and not regulatory_is_primary)
-            k_for_table = SINGLE_AGENT_REGULATORY_K if is_regulatory_complement else k
+            is_reg_complement = (table == _TABLE_REGULATORIOS and not regulatory_is_primary)
+            k_for_table = k_reg if is_reg_complement else k
             futures.append(loop.run_in_executor(None, _search, table, k_for_table))
 
         results_per_table = await asyncio.gather(*futures)
 
-        # Separa chunks por origem: especialista vs regulatorio complementar
         specialist_raw: List[Dict[str, Any]] = []
         regulatory_raw: List[Dict[str, Any]] = []
         reg_included = 0
         reg_skipped = 0
 
         for table, chunks in zip(all_tables_to_search, results_per_table):
-            is_regulatory_complement = (table == _TABLE_REGULATORIOS and not regulatory_is_primary)
-            if is_regulatory_complement:
+            is_reg_complement = (table == _TABLE_REGULATORIOS and not regulatory_is_primary)
+            if is_reg_complement:
                 for chunk in chunks:
                     score = float(chunk.get("score") or 0.0)
                     if score >= SINGLE_AGENT_REGULATORY_MIN_SCORE:
@@ -335,7 +377,6 @@ async def retrieve_context(state: SingleAgentState) -> dict:
                     else:
                         reg_skipped += 1
             elif table == _TABLE_REGULATORIOS:
-                # Tabela regulatoria como busca primaria (quando a query e regulatoria)
                 regulatory_raw.extend(chunks)
             else:
                 specialist_raw.extend(chunks)
@@ -354,19 +395,23 @@ async def retrieve_context(state: SingleAgentState) -> dict:
         specialist_chunks = _dedup(specialist_raw)
         regulatory_chunks = _dedup(regulatory_raw)
 
+        # Aplica gate de relevancia por score antes de ordenar
+        specialist_chunks = _apply_relevance_gate(specialist_chunks, search_type, is_regulatory=False)
+        # Regulatorio ja foi filtrado por SINGLE_AGENT_REGULATORY_MIN_SCORE acima
+
         specialist_chunks.sort(key=lambda x: float(x.get("score") or 0.0), reverse=True)
         regulatory_chunks.sort(key=lambda x: float(x.get("score") or 0.0), reverse=True)
 
         specialist_chunks = specialist_chunks[:k]
-        regulatory_chunks = regulatory_chunks[:SINGLE_AGENT_REGULATORY_K]
+        regulatory_chunks = regulatory_chunks[:k_reg]
 
-        # context_text combinado (para backwards compat e logs)
         all_final = specialist_chunks + [
             c for c in regulatory_chunks if c not in specialist_chunks
         ]
         context_text = _format_chunks_as_context(all_final)
 
         log_event("retrieve_context_complete",
+                  attempt=retrieval_attempts,
                   tables=str(all_tables_to_search),
                   specialist_chunks=len(specialist_chunks),
                   regulatory_chunks=len(regulatory_chunks),
@@ -379,21 +424,155 @@ async def retrieve_context(state: SingleAgentState) -> dict:
             "specialist_chunks": specialist_chunks,
             "regulatory_chunks": regulatory_chunks,
             "context_text": context_text,
+            "chunks_evaluated": False,
+            "chunks_sufficient": False,
+            "retrieval_attempts": retrieval_attempts + 1,
         }
 
 
 # ---------------------------------------------------------------------------
-# No 3: generate_answer
+# No 3: evaluate_chunks
+# ---------------------------------------------------------------------------
+
+_EVAL_SYSTEM = (
+    "Voce avalia se trechos de conhecimento sao suficientes para responder uma pergunta tecnica. "
+    "Responda APENAS com JSON valido: {\"sufficient\": true/false, \"reason\": \"<max 15 palavras>\"}. "
+    "sufficient=true quando os trechos contem dados diretos que respondem a pergunta (valores, limites, processos). "
+    "sufficient=false quando os trechos sao vagos, falam de outro produto/tema ou nao tem o dado pedido."
+)
+
+
+async def evaluate_chunks(state: SingleAgentState) -> dict:
+    """Avalia se os chunks recuperados respondem a pergunta.
+
+    Usa gpt-4o-mini com max_tokens=80 para minimizar latencia (~300ms).
+    Se insufficient: marca para re-retrieval com k ampliado.
+    Se sufficient ou segunda tentativa: segue para generate_answer.
+    """
+    intent: Optional[QueryIntent] = state.get("query_intent")
+    if not intent or intent.is_greeting or state.get("final_response"):
+        return {"chunks_evaluated": True, "chunks_sufficient": True}
+
+    specialist_chunks = state.get("specialist_chunks") or []
+    regulatory_chunks = state.get("regulatory_chunks") or []
+    retrieval_attempts = state.get("retrieval_attempts") or 0
+
+    # Se avaliador desabilitado via config, pula direto
+    if not SINGLE_AGENT_CHUNK_EVAL_ENABLED:
+        return {"chunks_evaluated": True, "chunks_sufficient": True}
+
+    # retrieval_attempts ja foi incrementado: >= 2 significa segunda busca concluida
+    if retrieval_attempts >= 2 or (not specialist_chunks and not regulatory_chunks):
+        log_event("evaluate_chunks_skip",
+                  reason="second_attempt_or_no_chunks",
+                  specialist=len(specialist_chunks),
+                  regulatory=len(regulatory_chunks))
+        return {"chunks_evaluated": True, "chunks_sufficient": True}
+
+    # Gate rapido: se temos chunks suficientes com score alto, pula o LLM
+    if len(specialist_chunks) >= _MIN_SPECIALIST_CHUNKS_OK:
+        top_score = max(float(c.get("score") or 0.0) for c in specialist_chunks)
+        search_type = SINGLE_AGENT_SEARCH_TYPE or DEFAULT_SEARCH_TYPE
+        good_threshold = 0.04 if search_type == "hybrid_rrf" else 0.45
+        if top_score >= good_threshold:
+            log_event("evaluate_chunks_fastpath",
+                      specialist=len(specialist_chunks),
+                      top_score=top_score)
+            return {"chunks_evaluated": True, "chunks_sufficient": True}
+
+    raw_query = _extract_user_query(state)
+
+    # Monta preview dos chunks (max 600 chars para economizar tokens)
+    all_chunks = specialist_chunks[:3] + regulatory_chunks[:1]
+    preview_parts = []
+    total_chars = 0
+    for chunk in all_chunks:
+        content = (chunk.get("content") or "").strip()[:200]
+        if content:
+            preview_parts.append(content)
+            total_chars += len(content)
+            if total_chars >= 600:
+                break
+
+    chunks_preview = "\n---\n".join(preview_parts) if preview_parts else "(nenhum trecho recuperado)"
+
+    human_msg = (
+        f"PERGUNTA: {raw_query}\n\n"
+        f"TRECHOS RECUPERADOS:\n{chunks_preview}\n\n"
+        f"Os trechos respondem diretamente a pergunta?"
+    )
+
+    async with NodeTimer("evaluate_chunks"):
+        try:
+            llm = ChatOpenAI(
+                model=SINGLE_AGENT_CLASSIFIER_MODEL,
+                temperature=0,
+                max_tokens=80,
+            )
+            async with LLMSlot():
+                response = await asyncio.wait_for(
+                    llm.ainvoke([
+                        SystemMessage(content=_EVAL_SYSTEM),
+                        HumanMessage(content=human_msg),
+                    ]),
+                    timeout=_CHUNK_EVAL_TIMEOUT_SEC,
+                )
+            raw = (response.content or "").strip()
+            # Extrai JSON mesmo se vier com texto extra
+            json_match = re.search(r"\{[^}]+\}", raw)
+            if json_match:
+                parsed = json.loads(json_match.group(0))
+                sufficient = bool(parsed.get("sufficient", True))
+                reason = str(parsed.get("reason", ""))
+            else:
+                sufficient = True
+                reason = "parse_failed"
+
+        except asyncio.TimeoutError:
+            _log.warning("evaluate_chunks: timeout — assumindo sufficient=True")
+            sufficient = True
+            reason = "timeout"
+        except Exception as exc:
+            _log.warning("evaluate_chunks: erro — assumindo sufficient=True: %s", exc)
+            sufficient = True
+            reason = f"error: {exc}"
+
+    log_event("evaluate_chunks_complete",
+              sufficient=sufficient,
+              reason=reason,
+              specialist=len(specialist_chunks),
+              regulatory=len(regulatory_chunks),
+              retrieval_attempts=retrieval_attempts)
+
+    return {
+        "chunks_evaluated": True,
+        "chunks_sufficient": sufficient,
+    }
+
+
+def _should_retry_retrieval(state: SingleAgentState) -> str:
+    """Decide se faz segundo retrieval ou segue para generate_answer.
+
+    retrieval_attempts ja foi incrementado em retrieve_context, entao:
+      1 = completou primeira busca, pode tentar segunda
+      2 = completou segunda busca, nao tenta mais
+    """
+    if not state.get("chunks_sufficient", True):
+        retrieval_attempts = state.get("retrieval_attempts") or 0
+        if retrieval_attempts < 2:
+            return "retrieve_context"
+    return "generate_answer"
+
+
+# ---------------------------------------------------------------------------
+# No 4: generate_answer
 # ---------------------------------------------------------------------------
 
 async def generate_answer(state: SingleAgentState) -> dict:
-    """Gera a resposta final com base nos chunks recuperados. Uma unica chamada LLM.
+    """Gera a resposta final com base nos chunks validados.
 
-    Quando ha chunks regulatorios separados, monta prompt hierarquico:
-    tecnico lidera, regulatorio complementa — igual ao consolidador V1.
-
-    Sem evidencia na KB: tenta web fallback (se habilitado) antes de
-    retornar _ZERO_EVIDENCE_MSG — nunca delega o texto de ausencia ao LLM.
+    Prompt hierarquico: tecnico lidera, regulatorio complementa.
+    Sem evidencia: web fallback → mensagem fixa.
     """
     intent: Optional[QueryIntent] = state.get("query_intent")
 
@@ -404,15 +583,12 @@ async def generate_answer(state: SingleAgentState) -> dict:
     specialist_chunks = state.get("specialist_chunks") or []
     regulatory_chunks = state.get("regulatory_chunks") or []
 
-    # Fallback para context_text quando os campos separados nao estao presentes
-    # (compatibilidade com invocacoes que nao passam pelo retrieve_context normal)
+    # Fallback para context_text (compatibilidade)
     if not specialist_chunks and not regulatory_chunks:
         context_text = state.get("context_text") or ""
         if context_text:
             specialist_chunks = [{"content": context_text, "score": 1.0}]
 
-    # Sem nenhuma evidencia na KB → web fallback direto (sem gate de sinal de laticinios)
-    # Quando a KB esta vazia, ja e last-resort — qualquer fonte web e valida.
     if not specialist_chunks and not regulatory_chunks:
         log_event("generate_answer_no_kb_evidence", query_len=len(raw_query))
         web_text, web_sources, _ = await _fetch_web_fallback_evidence(raw_query)
@@ -422,7 +598,6 @@ async def generate_answer(state: SingleAgentState) -> dict:
             if sources_block:
                 answer = f"{answer.rstrip()}\n\n{sources_block}"
             return {"final_response": answer}
-        # Web também falhou (sem conexão, timeout) — único caso onde retorna mensagem fixa
         return {"final_response": _ZERO_EVIDENCE_MSG}
 
     question_type = detect_question_type(raw_query)
@@ -493,11 +668,26 @@ async def generate_answer(state: SingleAgentState) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# No 4: validate_response
+# No 5: validate_response
 # ---------------------------------------------------------------------------
 
+_REGEN_SYSTEM = (
+    "Voce e o Dairy AI. A resposta anterior foi classificada como insuficiente. "
+    "Reescreva usando APENAS as evidencias fornecidas. "
+    "Seja direto: comece pelo dado ou limite principal. "
+    "Se as evidencias trouxerem numeros, use-os. Nao invente parametros ausentes."
+)
+
+
 async def validate_response(state: SingleAgentState) -> dict:
-    """Aplica pos-processamento e controle de qualidade minima na resposta."""
+    """Pos-processamento + re-geracao automatica se qualidade LOW/UNUSABLE.
+
+    Fluxo:
+      1. Strip de frases proibidas
+      2. Classifica qualidade
+      3. Se LOW/UNUSABLE e houver chunks validos: tenta re-geracao com instrucao diferente
+      4. Retorna melhor versao disponivel
+    """
     final_response = state.get("final_response") or ""
 
     if not final_response:
@@ -509,6 +699,80 @@ async def validate_response(state: SingleAgentState) -> dict:
         cleaned = strip_prohibited_phrases(final_response)
         cleaned = _postprocess_consolidated_answer(raw_query, cleaned)
         quality = classify_response_quality(cleaned)
+
+        log_event("validate_response_initial",
+                  quality=quality,
+                  response_chars=len(cleaned))
+
+        # Limiar de qualidade minima para disparar re-geracao
+        _quality_rank = {
+            ResponseQuality.HIGH: 3,
+            ResponseQuality.MEDIUM: 2,
+            ResponseQuality.LOW: 1,
+            ResponseQuality.UNUSABLE: 0,
+        }
+        _regen_threshold = _quality_rank.get(SINGLE_AGENT_MIN_QUALITY_FOR_REGEN, 2)
+        _needs_regen = _quality_rank.get(quality, 0) < _regen_threshold
+
+        # Re-geracao se qualidade abaixo do limiar e temos evidencias validas
+        if _needs_regen:
+            specialist_chunks = state.get("specialist_chunks") or []
+            regulatory_chunks = state.get("regulatory_chunks") or []
+
+            has_evidence = bool(specialist_chunks or regulatory_chunks)
+            specialist_text = state.get("reduced_specialist_text") or ""
+            regulatory_text = state.get("reduced_regulatory_text") or ""
+
+            # Usa o texto reduzido ja calculado, ou reconstroi se nao tiver
+            if not specialist_text and specialist_chunks:
+                specialist_text = _format_chunks_as_context(specialist_chunks[:4])
+            if not regulatory_text and regulatory_chunks:
+                regulatory_text = _format_chunks_as_context(regulatory_chunks[:2])
+
+            if has_evidence and (specialist_text or regulatory_text):
+                question_type = detect_question_type(raw_query)
+                human_content = build_synthesis_prompt(
+                    question=raw_query,
+                    question_type=question_type,
+                    specialist_text=specialist_text,
+                    regulatory_text=regulatory_text,
+                )
+
+                regen_messages = [
+                    SystemMessage(content=_REGEN_SYSTEM),
+                    HumanMessage(content=human_content),
+                ]
+
+                try:
+                    async with LLMSlot():
+                        llm = ChatOpenAI(
+                            model=state.get("llm_model") or LLM_MODEL,
+                            temperature=0.1,
+                            max_tokens=1200,
+                        )
+                        regen_response = await asyncio.wait_for(
+                            llm.ainvoke(regen_messages),
+                            timeout=_REGEN_TIMEOUT_SEC,
+                        )
+                        regen_text = (regen_response.content or "").strip()
+                        regen_text = strip_prohibited_phrases(regen_text)
+                        regen_text = _postprocess_consolidated_answer(raw_query, regen_text)
+                        regen_quality = classify_response_quality(regen_text)
+
+                        log_event("validate_response_regen",
+                                  original_quality=quality,
+                                  regen_quality=regen_quality,
+                                  regen_chars=len(regen_text))
+
+                        # Aceita a re-geracao se for melhor ou igual
+                        if _quality_rank.get(regen_quality, 0) >= _quality_rank.get(quality, 0):
+                            cleaned = regen_text
+                            quality = regen_quality
+
+                except asyncio.TimeoutError:
+                    _log.warning("validate_response: regen timeout — mantendo resposta original")
+                except Exception as exc:
+                    _log.warning("validate_response: regen falhou: %s", exc)
 
         log_event("validate_response_complete",
                   quality=quality,
@@ -526,7 +790,6 @@ async def validate_response(state: SingleAgentState) -> dict:
 # ---------------------------------------------------------------------------
 
 def _should_skip_to_validate(state: SingleAgentState) -> str:
-    """Depois de analyze_query, pula para validate se for saudacao."""
     intent: Optional[QueryIntent] = state.get("query_intent")
     if intent and intent.is_greeting:
         return "validate_response"
@@ -537,7 +800,7 @@ def _should_skip_to_validate(state: SingleAgentState) -> str:
 # Construcao do grafo
 # ---------------------------------------------------------------------------
 
-_graph_cache: Optional[Any] = None  # invalidado ao reiniciar o processo
+_graph_cache: Optional[Any] = None
 
 
 def get_single_agent_graph():
@@ -550,6 +813,7 @@ def get_single_agent_graph():
 
     builder.add_node("analyze_query", analyze_query)
     builder.add_node("retrieve_context", retrieve_context)
+    builder.add_node("evaluate_chunks", evaluate_chunks)
     builder.add_node("generate_answer", generate_answer)
     builder.add_node("validate_response", validate_response)
 
@@ -564,7 +828,17 @@ def get_single_agent_graph():
         },
     )
 
-    builder.add_edge("retrieve_context", "generate_answer")
+    builder.add_edge("retrieve_context", "evaluate_chunks")
+
+    builder.add_conditional_edges(
+        "evaluate_chunks",
+        _should_retry_retrieval,
+        {
+            "retrieve_context": "retrieve_context",
+            "generate_answer": "generate_answer",
+        },
+    )
+
     builder.add_edge("generate_answer", "validate_response")
     builder.add_edge("validate_response", END)
 
