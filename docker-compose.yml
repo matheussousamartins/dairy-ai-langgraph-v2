@@ -18,9 +18,7 @@ services:
       start_period: 40s
     networks:
       - dairy-net
-    depends_on:
-      langfuse-server:
-        condition: service_healthy
+
 
   langfuse-server:
     image: langfuse/langfuse:latest
