@@ -31,6 +31,15 @@ greetings:
   - "tudo bem"
   - "blz"
   - "beleza"
+  - "fala"
+  - "fala dairy"
+  - "oi dairy"
+  - "ola dairy"
+  - "olá dairy"
+  - "hey dairy"
+  - "hey"
+  - "opa"
+  - "salve"
 
 # ---------------------------------------------------------------------------
 # Sinal dairy genérico (determina se a pergunta é do domínio laticínios)
