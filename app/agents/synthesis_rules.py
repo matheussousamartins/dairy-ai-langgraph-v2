@@ -235,5 +235,10 @@ def build_synthesis_prompt(
         f"{format_instruction}\n\n"
         f"{evidence_block}\n\n"
         f"INSTRUÇÃO DE SÍNTESE: {synthesis_instruction}\n\n"
+        f"ANTES DE RESPONDER — faça mentalmente estas verificações:\n"
+        f"1. O que exatamente a PERGUNTA pede? (escopo: quais itens, qual parâmetro, qual produto)\n"
+        f"2. Quais itens nas evidências respondem diretamente a esse escopo?\n"
+        f"3. Algum item relevante ficou de fora? Se sim, inclua-o.\n"
+        f"Só então escreva a resposta final.\n\n"
         f"Resposta final:"
     )
