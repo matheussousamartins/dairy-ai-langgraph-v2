@@ -207,7 +207,7 @@ DEFAULT_K = int(os.getenv("DEFAULT_K", "8"))
 # 0.3 Ã© conservador â€" inclui chunks "razoavelmente" relevantes.
 # 0.5 Ã© mais restritivo â€" sÃ³ chunks bem relevantes.
 # None = sem limiar (retorna os top K independente do score).
-MATCH_THRESHOLD = float(os.getenv("MATCH_THRESHOLD", "0.3")) if os.getenv("MATCH_THRESHOLD") else None
+MATCH_THRESHOLD = float(os.getenv("MATCH_THRESHOLD")) if os.getenv("MATCH_THRESHOLD") else None
 
 
 # ============================================================
