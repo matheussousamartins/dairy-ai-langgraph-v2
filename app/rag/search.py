@@ -750,7 +750,7 @@ def search_vector(
                     ORDER BY embedding <=> %s::vector ASC
                     LIMIT %s
                     """.format(table_name),
-                    (vec_lit, k),
+                    (vec_lit, vec_lit, k),
                 )
             else:
                 cur.execute(
