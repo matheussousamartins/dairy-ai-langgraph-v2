@@ -24,6 +24,7 @@ class QuestionType:
     FACTUAL_SHORT = "factual_short"       # "Qual o pH...", "Quem é..."
     COMPARATIVE = "comparative"            # "Diferença entre X e Y"
     PROCESS = "process"                    # "Como fabricar...", "Quais etapas..."
+    ENUMERATIVE = "enumerative"            # "Quais ingredientes/aditivos/parâmetros aparecem..."
     TROUBLESHOOTING = "troubleshooting"    # "Por que meu queijo...", "Defeito X..."
     REGULATORY = "regulatory"              # "Qual norma...", "O que diz a IN..."
     CALCULATIVE = "calculative"            # "Calcule...", "Qual o valor de..."
@@ -40,6 +41,11 @@ _QUESTION_PATTERNS: List[Tuple[str, str]] = [
     (r"\b(defeito|problema|causa|diagnostico|por\s*que\s+.*(esta|apresent|ocorre))\b", QuestionType.TROUBLESHOOTING),
     (r"\b(estufamento|amargor|sinerese|trinca|ranc|mofo|contamin)\b", QuestionType.TROUBLESHOOTING),
     (r"o\s+que\s+pode\s+(ser|causar|estar)", QuestionType.TROUBLESHOOTING),
+
+    # Enumerativa — "quais X aparecem/existem/são usados/estão presentes"
+    (r"\bquais\s+.{3,40}\s+(aparecem|existem|s[aã]o\s+usad|s[aã]o\s+empregad|est[aã]o\s+present|podem\s+ser\s+usad|s[aã]o\s+permit)\b", QuestionType.ENUMERATIVE),
+    (r"\bquais\s+(ingredientes?|aditivos?|par[aâ]metros?|componentes?|elementos?|fatores?|tipos?\s+de|culturas?|enzimas?|conservantes?)\b", QuestionType.ENUMERATIVE),
+    (r"\bquais\s+s[aã]o\s+(os|as)\s+(ingredientes?|aditivos?|par[aâ]metros?|componentes?|etapas?|requisitos?|caracter[ií]sticas?)\b", QuestionType.ENUMERATIVE),
 
     # Processo / fabricação
     (r"\b(composi[cç][aã]o\s+e\s+processo|processo\s+b[aá]sico|composi[cç][aã]o\s+b[aá]sica)\b", QuestionType.PROCESS),
@@ -107,6 +113,13 @@ _FORMAT_INSTRUCTIONS: dict[str, str] = {
         "FORMATO: Apresente fórmula → valores substituídos → resultado → unidade. "
         "Use texto simples (sem LaTeX). "
         "Se houver variantes ou observações, liste após o resultado."
+    ),
+    QuestionType.ENUMERATIVE: (
+        "FORMATO DE SAÍDA: Antes de detalhar, enuncie na primeira frase o conjunto completo "
+        "de itens que serão cobertos (ex.: 'O processo utiliza X, Y, Z e W.'). "
+        "Em seguida, detalhe cada item com sua faixa ou dose em prosa fluida — sem rótulos "
+        "em maiúsculas nem headers com dois-pontos. Use frases de transição para conectar os itens. "
+        "Não omita nenhum ingrediente ou aditivo presente nas evidências."
     ),
     QuestionType.GENERAL: "",
 }

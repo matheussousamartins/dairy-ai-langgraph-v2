@@ -74,6 +74,13 @@ SYNTHESIS_BASE_RULES: str = (
 # após as regras base no prompt de síntese, antes da evidência.
 
 FORMAT_INSTRUCTIONS: dict[str, str] = {
+    QuestionType.ENUMERATIVE: (
+        "FORMATO DE SAÍDA: Antes de detalhar, enuncie na primeira frase o conjunto completo "
+        "de itens que serão cobertos (ex.: 'O processo utiliza X, Y, Z e W.'). "
+        "Em seguida, detalhe cada item com sua faixa ou dose em prosa fluida — sem rótulos "
+        "em maiúsculas nem headers com dois-pontos. Use frases de transição para conectar os itens. "
+        "Não omita nenhum ingrediente ou aditivo presente nas evidências."
+    ),
     QuestionType.FACTUAL_SHORT: (
         "FORMATO DE SAÍDA: O dado solicitado aparece logo na primeira frase. "
         "Se o parâmetro vier em faixa (mínimo–ideal–máximo), cite a faixa completa na primeira frase — não apenas um extremo. "
