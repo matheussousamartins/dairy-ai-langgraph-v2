@@ -215,6 +215,7 @@ def _keyword_classify(norm: str) -> Optional[QueryIntent]:
 _CLASSIFIER_SYSTEM = """Voce e o classificador de dominio do DairyApp AI.
 
 DOMINIOS (retorne exatamente esses nomes):
+- greeting: saudacao, cumprimento, mensagem social sem pergunta tecnica (ex: "oi", "fala dairy", "tudo bem?", "boa tarde", "como voce esta", "obrigado", "ate logo", "ok", "entendi", "certo"). Use greeting sempre que a mensagem nao contiver pergunta tecnica sobre laticinios — independente de como foi formulada.
 - queijos: tecnologia de fabricacao e maturacao de queijos; processo (coagulacao, filagem, prensagem, salga, dessoragem); ingredientes de processo (coalho, GDL, CaCl2, soro-fermento, culturas adjuntas, sal); qualidade do leite COMO FATOR que impacta o queijo (CCS, psicrotroficas, Clostridium, antibioticos, mastite em contexto de fabricacao); defeitos tecnicos de queijo (estufamento, amargor, olhadura, trinca, rancidez); maturacao e bioquimica (proteolise, lipolise, grana, browning, derretimento)
 - fermentados: iogurte, kefir, leite fermentado, bebida lactea fermentada, coalhada, skyr; culturas lacticas e probioticos; sinerese, viscosidade, gel de iogurte; pos-acidificacao; EPS
 - regulatorios: instrucoes normativas (IN 76, IN 77, IN 30, IN 46, IN 22, IN 65-74), RDCs, RIISPOA, Codex, FDA, EU; rotulagem e denominacao de venda; padroes de identidade e qualidade (RTIQ); alegacoes nutricionais; prazos de adequacao
@@ -223,13 +224,40 @@ DOMINIOS (retorne exatamente esses nomes):
 - formulacao: formulacao de PRODUTOS FINAIS (doce de leite, requeijao cremoso, cream cheese, sobremesa lactea, bebida lactea nao fermentada); estabilizantes, espessantes, emulsificantes em produtos prontos; shelf-life de produto acabado; balanco de massa
 
 RETORNE APENAS JSON VALIDO. Formato: {"dominios": ["queijos"], "confidence": 0.95}
-- dominios: lista de 1 ou 2 strings do conjunto acima
+- dominios: lista com 1 string (greeting nunca combina com outros dominios)
 - Use 2 dominios apenas quando a pergunta combina claramente aspecto tecnico de produto + norma/regulacao
 - confidence: float 0.0-1.0"""
 
 # Few-shot examples: (query_normalizada, dominios_corretos)
 # Cobrem os casos de fronteira mais frequentes — usados como historico na chamada LLM
 _CLASSIFIER_FEW_SHOTS = [
+    # --- GREETING: saudacoes e mensagens sociais sem pergunta tecnica ---
+    ("fala dairy",
+     '{"dominios": ["greeting"], "confidence": 0.99}'),
+    ("oi dairy tudo bem",
+     '{"dominios": ["greeting"], "confidence": 0.99}'),
+    ("bom dia",
+     '{"dominios": ["greeting"], "confidence": 0.99}'),
+    ("boa tarde equipe",
+     '{"dominios": ["greeting"], "confidence": 0.99}'),
+    ("opa",
+     '{"dominios": ["greeting"], "confidence": 0.99}'),
+    ("salve",
+     '{"dominios": ["greeting"], "confidence": 0.99}'),
+    ("hey dairy como vai",
+     '{"dominios": ["greeting"], "confidence": 0.99}'),
+    ("obrigado",
+     '{"dominios": ["greeting"], "confidence": 0.99}'),
+    ("ok entendi valeu",
+     '{"dominios": ["greeting"], "confidence": 0.99}'),
+    ("ate logo",
+     '{"dominios": ["greeting"], "confidence": 0.99}'),
+    ("certo perfeito",
+     '{"dominios": ["greeting"], "confidence": 0.99}'),
+    ("o que voce faz",
+     '{"dominios": ["greeting"], "confidence": 0.97}'),
+    ("quem e voce",
+     '{"dominios": ["greeting"], "confidence": 0.97}'),
     # --- QUEIJOS: processo e ingredientes ---
     ("por que a gdl pode ajudar na coagulacao mas nao substitui o soro-fermento",
      '{"dominios": ["queijos"], "confidence": 0.97}'),
@@ -379,6 +407,15 @@ async def _llm_classify_async(query_norm: str) -> Optional[List[str]]:
 
 def _dominios_to_intent(dominios: List[str], norm: str) -> QueryIntent:
     """Converte lista de dominios LLM para QueryIntent com tabelas."""
+    # Saudacao detectada pelo LLM — sem RAG
+    if "greeting" in dominios:
+        return QueryIntent(
+            search_tables=[],
+            domain="greeting",
+            is_greeting=True,
+            classified_by="llm",
+        )
+
     tables = []
     for d in dominios:
         t = _DOMAIN_TO_TABLE.get(d)
@@ -390,7 +427,6 @@ def _dominios_to_intent(dominios: List[str], norm: str) -> QueryIntent:
 
     domain = "_".join(dominios) if dominios else "unknown"
     needs_regulatory = _TABLE_REGULATORIOS in tables
-
     question_type = "regulatory" if needs_regulatory else "general"
 
     return QueryIntent(
