@@ -83,10 +83,12 @@ _log = logging.getLogger(__name__)
 # Constantes do pipeline de qualidade
 # ---------------------------------------------------------------------------
 
-# Score minimo para chunks especialistas entrarem no contexto (hybrid_rrf)
-_SPECIALIST_MIN_SCORE_HYBRID = float(0.018)
+# Score minimo para chunks especialistas entrarem no contexto (hybrid_rrf).
+# hybrid_rrf RRF scores tipicos: 0.01-0.07. Threshold baixo para nao filtrar demais.
+# Aumentar so se houver muito ruido de chunks irrelevantes confirmado em prod.
+_SPECIALIST_MIN_SCORE_HYBRID = float(0.008)
 # Score minimo para chunks especialistas entrarem no contexto (vector/cosine)
-_SPECIALIST_MIN_SCORE_VECTOR = float(0.25)
+_SPECIALIST_MIN_SCORE_VECTOR = float(0.22)
 
 # Minimo de chunks especialistas validos para considerar retrieve bem-sucedido
 _MIN_SPECIALIST_CHUNKS_OK = 2
@@ -336,7 +338,7 @@ async def retrieve_context(state: SingleAgentState) -> dict:
 
         def _search(table: str, k_override: int) -> List[Dict[str, Any]]:
             try:
-                return search_knowledge_base(
+                results = search_knowledge_base(
                     query=resolved_query,
                     table_name=table,
                     search_type=search_type,
@@ -344,8 +346,14 @@ async def retrieve_context(state: SingleAgentState) -> dict:
                     threshold=effective_threshold,
                     precomputed_embedding=precomputed,
                 )
+                _log.debug(
+                    "retrieve_context: tabela=%s k=%d resultados=%d top_score=%s",
+                    table, k_override, len(results),
+                    f"{float(results[0].get('score') or 0):.4f}" if results else "N/A",
+                )
+                return results
             except Exception as exc:
-                _log.warning("retrieve_context: falha na tabela %s: %s", table, exc)
+                _log.error("retrieve_context: FALHA na tabela %s: %s", table, exc, exc_info=True)
                 return []
 
         regulatory_is_primary = _TABLE_REGULATORIOS in tables
@@ -394,6 +402,11 @@ async def retrieve_context(state: SingleAgentState) -> dict:
 
         specialist_chunks = _dedup(specialist_raw)
         regulatory_chunks = _dedup(regulatory_raw)
+
+        _log.info(
+            "retrieve_context: antes do gate — specialist=%d regulatory=%d search_type=%s",
+            len(specialist_chunks), len(regulatory_chunks), search_type,
+        )
 
         # Aplica gate de relevancia por score antes de ordenar
         specialist_chunks = _apply_relevance_gate(specialist_chunks, search_type, is_regulatory=False)
