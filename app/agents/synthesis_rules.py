@@ -54,7 +54,13 @@ SYNTHESIS_BASE_RULES: str = (
     "R9. Proibição de falsa ausência: NUNCA escreva 'não há especificação' ou qualquer "
     "variante de ausência quando a evidência contém um número relevante. "
     "Se o número está nas evidências, use-o — mesmo precedido de 'aproximadamente' "
-    "ou 'recomenda-se'."
+    "ou 'recomenda-se'.\n"
+    "R10. Valores em contexto de alerta são dados técnicos válidos: se a evidência apresenta "
+    "um valor numérico no contexto de 'limite', 'excessivo', 'prejudica', 'não deve ultrapassar' "
+    "ou similar, esse valor É a referência técnica para a pergunta. Use-o diretamente como "
+    "resposta ao 'qual é o limite', 'qual o teor recomendado' etc. — não o descarte por estar "
+    "em contexto de alerta. Exemplo: evidência diz 'sal acima de 1,8% retarda a maturação' → "
+    "responda '1,8% é o limite técnico a não ultrapassar para maturação regular'."
 )
 
 
