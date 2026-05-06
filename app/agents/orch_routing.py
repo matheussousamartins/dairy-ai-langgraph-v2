@@ -54,11 +54,11 @@ from app.agents.orch_signals import (
 # Constantes de agentes
 # ---------------------------------------------------------------------------
 
-# Agente regulatório presente em toda pergunta de laticínios.
+# Agente regulatório acionado apenas por sinal explícito (não mais baseline universal).
 _REGULATORY_BASELINE_ID: int = 3
 
-# Mantém compatibilidade com código que itera sobre baseline_ids.
-_ROUTING_BASELINE_IDS: List[int] = [_REGULATORY_BASELINE_ID]
+# Baseline vazio — Agente 3 só entra quando houver sinal regulatório explícito.
+_ROUTING_BASELINE_IDS: List[int] = []
 
 # Agentes sem KB: removidos de qualquer rota. Remova daqui ao ingerir KB.
 _AGENTS_WITHOUT_KB: Set[int] = {0, 2, 4, 5, 6}

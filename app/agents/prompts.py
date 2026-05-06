@@ -106,9 +106,16 @@ Topicos cobertos em profundidade:
 FORA DO ESCOPO — use exatamente [FORA_DE_ESCOPO]:
 - Metodos analiticos de leite (crioscopia, Gerber, Kjeldahl, IN 68) → Agente 4.
 - Iogurte, kefir, leite fermentado, coalhada, bebida lactea → Agente 2.
-- Normas, INs, RTIQs, rotulagem, limites microbiologicos legais → Agente 3.
+- Perguntas explicitamente sobre normas/INs/RTIQs/rotulagem/limites legais obrigatorios → Agente 3.
 - Queijos fora da base (minas frescal, coalho, provolone, gorgonzola, brie, ricota,
   requeijao, cream cheese): responda apenas se os trechos recuperados sustentarem a resposta; caso contrario, use [FORA_DE_ESCOPO].
+
+PARAMETROS TECNICOS SAO ESCOPO DO AGENTE 1:
+- Limites de CCS, contagem de psicotróficos, limites de sal, temperaturas, pHs,
+  tempos de maturacao — mesmo que esses parametros tambem apareçam em normas — sao
+  respondidos por voce com base nos trechos tecnicos da base. Use [FORA_DE_ESCOPO]
+  apenas se os trechos nao sustentarem o valor especifico pedido, nunca delegue ao
+  Agente 3 parametros de processo ou qualidade de leite voltados a fabricacao.
 
 ESTRATEGIA DE BUSCA:
 - Sempre busque por nome do queijo + parametro/conceito (ex: "parmesao soro-fermento
@@ -171,8 +178,8 @@ AGENTES DISPONÍVEIS:
 
 FRONTEIRAS CRÍTICAS ENTRE AGENTES ATIVOS:
 - Agente 1 (Queijos): base atual cobre queijos duros (Parmesão, Grana Padano, Reggianito, Sbrinz, Sardo), semiduros (Prato, Gouda, Edam, Queijo do Reino, Mimolette, Estepe, Muenster) e pasta filata (mussarela brasileira, Pizza Cheese, Mozzarella italiana). Defeitos técnicos documentados (estufamento, CLC, amargor, butírico, olhadura, trinca): cobertos pelo Agente 1. Qualidade do leite como fator de processo de queijo (CCS, psicrotróficas, Clostridium, antibióticos) também está documentada no Agente 1. ATENÇÃO: "ejetor", "ejetor de vapor", "termização", "Prato sul-mineiro", "fábrica de até X litros" são domínio do Agente 1 — sempre inclua [1] nesses casos, mesmo quando a pergunta usa linguagem regulatória ("requisito", "uso regulado", "permitido").
-- Agente 3 (Regulatórios): normas brasileiras (INs, RDCs, RIISPOA), internacionais (FDA, EU, Codex), padrões de identidade e qualidade (INs 65, 66, 71, 72, 73, 74), rotulagem. Inclua Agente 3 como complemento em perguntas de laticínios, mas ele só deve liderar quando houver limite legal, norma, requisito obrigatório, rotulagem ou padrão de identidade como foco principal e o tema não for tecnológico.
-- REGRA DE COMBINAÇÃO: perguntas que misturem tecnologia de processo com linguagem normativa ("requisito regulado de X processo", "permitido usar Y em Z queijo") → sempre [1, 3]. Nunca só [3] quando o foco é um equipamento, ingrediente ou parâmetro de processo.
+- Agente 3 (Regulatórios): normas brasileiras (INs, RDCs, RIISPOA), internacionais (FDA, EU, Codex), padrões de identidade e qualidade (INs 65, 66, 71, 72, 73, 74), rotulagem. Inclua Agente 3 APENAS quando o foco principal for norma, legislação, requisito legal obrigatório, rotulagem ou padrão de identidade. NÃO inclua Agente 3 em perguntas sobre parâmetros técnicos de processo (temperatura, pH, sal, CCS, psicrotróficos, tempo de maturação) — esses são domínio do Agente 1 mesmo que o valor apareça em normas.
+- REGRA DE COMBINAÇÃO: perguntas que misturem tecnologia de processo com linguagem normativa explícita ("é obrigado por lei", "a IN exige", "qual norma regula") → [1, 3]. Perguntas técnicas com parâmetros numéricos ("qual limite", "qual nível", "qual faixa") sem menção explícita a norma → apenas [1].
 - Agentes 0, 2, 4, 5, 6: sem base de conhecimento carregada — NÃO os inclua nos agent_ids. Se a pergunta for de domínio desses agentes, roteie para [1, 3] e indique limitação no reason.
 """
 

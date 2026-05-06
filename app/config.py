@@ -194,13 +194,13 @@ HETZNER_DB_PREPARE_THRESHOLD = _parse_optional_non_negative_int_env(
 # RecomendaÃ§Ã£o por fase:
 #   Fase 1 (inÃ­cio):     "vector"     â€" simples, funciona bem para 80% dos casos
 #   Fase 2 (refinamento): "hybrid_rrf" â€" melhora busca por termos exatos (legislaÃ§Ã£o)
-DEFAULT_SEARCH_TYPE = os.getenv("DEFAULT_SEARCH_TYPE", "vector")
+DEFAULT_SEARCH_TYPE = os.getenv("DEFAULT_SEARCH_TYPE", "hybrid_rrf")
 
 # Quantidade de chunks retornados pela busca.
 # 5 Ã© um bom equilÃ­brio: contexto suficiente sem sobrecarregar o LLM.
 # Para respostas mais detalhadas, aumente para 8-10.
 # Para respostas mais concisas, reduza para 3.
-DEFAULT_K = int(os.getenv("DEFAULT_K", "5"))
+DEFAULT_K = int(os.getenv("DEFAULT_K", "8"))
 
 # Limiar mÃ­nimo de similaridade para incluir um chunk nos resultados.
 # Score = 1 - distÃ¢ncia_cosseno. Varia de 0 (nada similar) a 1 (idÃªntico).
@@ -347,7 +347,7 @@ RAG_MIN_ALNUM_RATIO = float(os.getenv("RAG_MIN_ALNUM_RATIO", "0.25"))
 # Segunda passada de retrieval (fallback de cobertura).
 # Quando ativada, e a primeira busca vier fraca, roda uma segunda busca
 # mais ampla para aumentar recall antes de devolver os chunks finais.
-RAG_SECOND_PASS_ENABLED = os.getenv("RAG_SECOND_PASS_ENABLED", "false").strip().lower() == "true"
+RAG_SECOND_PASS_ENABLED = os.getenv("RAG_SECOND_PASS_ENABLED", "true").strip().lower() == "true"
 RAG_SECOND_PASS_MIN_RESULTS = int(os.getenv("RAG_SECOND_PASS_MIN_RESULTS", "3"))
 RAG_SECOND_PASS_MIN_KEYWORD_HITS = int(os.getenv("RAG_SECOND_PASS_MIN_KEYWORD_HITS", "1"))
 RAG_SECOND_PASS_EXPAND_FACTOR = float(os.getenv("RAG_SECOND_PASS_EXPAND_FACTOR", "2.5"))
