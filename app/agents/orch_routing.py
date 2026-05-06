@@ -703,7 +703,12 @@ def _build_execution_plan(
             # Especialista lidera; Agent 3 fecha o plano como complemento.
             plan = selected + [_REGULATORY_BASELINE_ID] if selected else [_REGULATORY_BASELINE_ID]
         else:
-            plan = selected if selected else []
+            if not selected:
+                # Plano vazio em rota dairy — fallback para especialista padrão.
+                specialist_id = _default_specialist_id()
+                if specialist_id is not None:
+                    selected = [specialist_id]
+            plan = selected
     else:
         max_agents = _SPECIALISTS_PER_BUCKET.get(bucket, 2)
         plan = (chosen + [aid for aid in alts if aid not in chosen])[:max_agents]
