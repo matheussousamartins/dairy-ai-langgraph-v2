@@ -227,6 +227,7 @@ export async function POST(req: NextRequest, context: { params: Promise<{ thread
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
       Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
     },
   });
 }
