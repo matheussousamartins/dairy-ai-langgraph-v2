@@ -52,6 +52,7 @@ Hierarquia:
 """
 
 import json
+import ast
 import re
 import unicodedata
 from typing import Dict, Any, Optional, List, Annotated
@@ -65,6 +66,7 @@ from langgraph.prebuilt import ToolNode
 
 from app.config import (
     LLM_MODEL,
+    LLM_MAX_TOKENS,
     AGENT_TEMPERATURE,
     DEFAULT_SEARCH_TYPE,
     RAG_EARLY_SKIP_WEAK_SEARCH_ENABLED,
@@ -327,20 +329,68 @@ def _is_regulatory_minimum_maturation_query(query: str) -> bool:
     return has_requirement and has_maturation and has_cheese_context
 
 
+def _unwrap_tool_result_payload(payload: Any) -> List[Any]:
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except Exception:
+            try:
+                payload = ast.literal_eval(payload)
+            except Exception:
+                return []
+
+    if isinstance(payload, list):
+        flattened: List[Any] = []
+        for item in payload:
+            if isinstance(item, dict):
+                nested = None
+                for key in ("results", "chunks", "items", "data", "documents", "matches"):
+                    value = item.get(key)
+                    if isinstance(value, list):
+                        nested = value
+                        break
+                if nested is not None:
+                    flattened.extend(nested)
+                    continue
+            flattened.append(item)
+        return flattened
+
+    if isinstance(payload, dict):
+        for key in ("results", "chunks", "items", "data", "documents", "matches"):
+            value = payload.get(key)
+            if isinstance(value, list):
+                return value
+        if any(
+            key in payload
+            for key in ("content", "text", "page_content", "snippet", "chunk")
+        ):
+            return [payload]
+
+    return []
+
+
 def _extract_tool_results(messages: List[AnyMessage]) -> List[Dict[str, Any]]:
     results: List[Dict[str, Any]] = []
     for msg in messages:
         if not isinstance(msg, ToolMessage):
             continue
-        content = msg.content
-        try:
-            parsed = json.loads(content) if isinstance(content, str) else content
-        except Exception:
-            continue
-        if not isinstance(parsed, list):
-            continue
+        parsed = _unwrap_tool_result_payload(msg.content)
+        if not parsed:
+            artifact = getattr(msg, "artifact", None)
+            if artifact is not None:
+                parsed = _unwrap_tool_result_payload(artifact)
         for item in parsed:
             if isinstance(item, dict):
+                if "content" not in item:
+                    text = (
+                        item.get("text")
+                        or item.get("page_content")
+                        or item.get("snippet")
+                        or item.get("chunk")
+                    )
+                    if text:
+                        item = dict(item)
+                        item["content"] = text
                 results.append(item)
     return results
 
@@ -400,6 +450,7 @@ class AgentState(TypedDict, total=False):
     agent_prompt: str
     llm_model: str
     precomputed_embedding: Optional[List[float]]
+    search_query: Optional[str]
 
 
 # ============================================================
@@ -472,7 +523,11 @@ def build_agent_graph(agent_id: int, model_name: str = LLM_MODEL) -> Any:
         tools.extend(get_calculation_tools())
     
     # ---- Passo 3: Criar o modelo LLM com tools ----
-    model = ChatOpenAI(model=model_name, temperature=AGENT_TEMPERATURE)
+    model = ChatOpenAI(
+        model=model_name,
+        temperature=AGENT_TEMPERATURE,
+        max_tokens=LLM_MAX_TOKENS,
+    )
     model_with_tools = model.bind_tools(tools)
 
     # Nome da tool (usado na chamada forçada do prepare)
@@ -501,7 +556,9 @@ def build_agent_graph(agent_id: int, model_name: str = LLM_MODEL) -> Any:
             if isinstance(msg, HumanMessage):
                 user_text = msg.content
                 break
-        search_query = _build_contextual_search_query(user_text)
+        search_query = str(state.get("search_query") or "").strip()
+        if not search_query:
+            search_query = _build_contextual_search_query(user_text)
 
         # Reutiliza embedding pré-computado pelo orquestrador quando disponível,
         # evitando chamada duplicada à OpenAI para a mesma query.
@@ -540,7 +597,29 @@ def build_agent_graph(agent_id: int, model_name: str = LLM_MODEL) -> Any:
         """
         messages = list(state.get("messages", []))
 
+        # Quando há chunks RAG reais, reforça ancoragem no system prompt.
+        # Evidência insuficiente é decisão do orquestrador, não improviso do agente.
+        tool_results = _extract_tool_results(messages)
         prompt_text = state.get("agent_prompt", "")
+        if tool_results and prompt_text:
+            # 400 chars por chunk garante que valores numéricos e parâmetros
+            # críticos apareçam no resumo — 120 chars truncava antes do dado relevante.
+            chunk_summary = "\n".join(
+                f"[{i+1}] {str(item.get('content', ''))[:400].replace(chr(10), ' ')}"
+                for i, item in enumerate(tool_results[:5])
+                if item.get("content")
+            )
+            anchoring = (
+                "\n\nATENCAO — ANCORAGEM OBRIGATORIA: use EXCLUSIVAMENTE os trechos "
+                "recuperados abaixo. Nao use conhecimento geral nem complete com memoria "
+                "de treinamento. Extraia e sintetize os dados presentes — mesmo que "
+                "parciais. Nao emita juizo sobre suficiencia da evidencia: isso e decisao "
+                "do sistema. Se absolutamente nenhum trecho tocar no tema da pergunta, "
+                "responda exatamente [FORA_DE_ESCOPO] — mas apenas nesse caso extremo.\n"
+                f"Trechos recuperados:\n{chunk_summary}"
+            )
+            prompt_text = prompt_text + anchoring
+
         if prompt_text:
             messages = [SystemMessage(content=prompt_text)] + messages
 
@@ -608,8 +687,10 @@ def build_agent_graph(agent_id: int, model_name: str = LLM_MODEL) -> Any:
         if len(tool_msgs) != 1:
             return "agent"
 
-        user_text = ""
+        user_text = str(state.get("search_query") or "").strip()
         for msg in reversed(messages):
+            if user_text:
+                break
             if isinstance(msg, HumanMessage):
                 user_text = _build_contextual_search_query(msg.content)
                 break
@@ -620,7 +701,7 @@ def build_agent_graph(agent_id: int, model_name: str = LLM_MODEL) -> Any:
 
         content = tool_msgs[0].content
         try:
-            results = json.loads(content) if isinstance(content, str) else content
+            results = _unwrap_tool_result_payload(content)
             if not results or not isinstance(results, list):
                 # Base retornou lista vazia → sem evidência.
                 return "skip_weak"

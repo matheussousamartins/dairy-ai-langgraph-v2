@@ -38,6 +38,8 @@ def _is_allowed_domain(url: str, allowed_domains: List[str]) -> bool:
     if not domain:
         return False
     normalized = [_normalize_domain(d) for d in (allowed_domains or []) if d]
+    if not normalized:
+        return True
     for base in normalized:
         if domain == base or domain.endswith("." + base):
             return True
@@ -76,6 +78,9 @@ def search_web_duckduckgo(
     max_snippet_chars: int = 420,
 ) -> List[Dict[str, Any]]:
     """Busca web via DuckDuckGo HTML e aplica whitelist de domínios.
+
+    Se allowed_domains vier vazio, a busca fica aberta. O orquestrador usa isso
+    como segunda tentativa depois da whitelist configurada.
 
     Retorna resultados no formato:
       {title, url, domain, snippet}

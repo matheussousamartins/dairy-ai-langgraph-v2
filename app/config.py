@@ -1,20 +1,4 @@
-﻿"""
-config.py â€” ConfiguraÃ§Ãµes centralizadas do DairyApp AI
-
-Este arquivo Ã© importado por TODOS os outros mÃ³dulos do projeto.
-Ele lÃª variÃ¡veis de ambiente do arquivo .env e expÃµe como constantes Python.
-
-Por que centralizar?
-- Trocar de modelo (gpt-4o-mini â†’ gpt-4o) = mudar 1 linha no .env
-- Trocar de banco (Supabase â†’ Hetzner) = mudar 1 URL no .env
-- Ativar reranking ou HyDE = mudar 1 flag no .env
-- Nenhum arquivo de cÃ³digo precisa ser editado para mudar comportamento
-
-Hierarquia de prioridade:
-1. VariÃ¡vel de ambiente do sistema (export VAR=valor)
-2. VariÃ¡vel no arquivo .env
-3. Valor padrÃ£o definido aqui (fallback para desenvolvimento)
-"""
+"""config.py - Configuracoes centralizadas do DairyApp AI"""
 
 import os
 from dotenv import load_dotenv
@@ -62,7 +46,7 @@ def _parse_csv_env(var_name: str, default: str = "") -> list[str]:
 
 
 # ============================================================
-# OPENAI â€” Chaves e modelos
+# OPENAI â€" Chaves e modelos
 # ============================================================
 
 # Chave da API da OpenAI. NecessÃ¡ria para:
@@ -78,12 +62,16 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 # Para economia mÃ¡xima durante desenvolvimento, use "gpt-3.5-turbo".
 LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini")
 ALLOWED_CHAT_MODELS = _parse_csv_env("ALLOWED_CHAT_MODELS", LLM_MODEL)
+LLM_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "1200"))
+CLASSIFIER_MAX_TOKENS = int(os.getenv("CLASSIFIER_MAX_TOKENS", "300"))
+CONSOLIDATION_MAX_TOKENS = int(os.getenv("CONSOLIDATION_MAX_TOKENS", "1500"))
+DIRECT_MAX_TOKENS = int(os.getenv("DIRECT_MAX_TOKENS", "900"))
 
-# Temperaturas por papel â€” controla criatividade vs. determinismo.
+# Temperaturas por papel â€" controla criatividade vs. determinismo.
 # 0 = determinÃ­stico (ideal para classificaÃ§Ã£o), 1 = mais criativo.
 AGENT_TEMPERATURE         = float(os.getenv("AGENT_TEMPERATURE", "0.3"))
 CONSOLIDATION_TEMPERATURE = float(os.getenv("CONSOLIDATION_TEMPERATURE", "0.3"))
-CONSOLIDATION_TIMEOUT_SEC = float(os.getenv("CONSOLIDATION_TIMEOUT_SEC", "10"))
+CONSOLIDATION_TIMEOUT_SEC = float(os.getenv("CONSOLIDATION_TIMEOUT_SEC", "25"))
 DIRECT_TEMPERATURE        = float(os.getenv("DIRECT_TEMPERATURE", "0.5"))
 CLASSIFIER_TEMPERATURE    = float(os.getenv("CLASSIFIER_TEMPERATURE", "0"))
 AGENT_PROMPT_MODE         = os.getenv("AGENT_PROMPT_MODE", "compact").strip().lower()
@@ -102,9 +90,35 @@ ORCHESTRATOR_CONTEXT_TRIGGER_MAX_CHARS = int(
     os.getenv("ORCHESTRATOR_CONTEXT_TRIGGER_MAX_CHARS", "220")
 )
 
+# Concorrência máxima de chamadas LLM simultâneas.
+# Previne HTTP 429 (rate limit) da OpenAI em picos de carga.
+MAX_CONCURRENT_LLM_CALLS = int(os.getenv("MAX_CONCURRENT_LLM_CALLS", "10"))
+
+# Few-shot examples no classificador — quantidade por classe.
+CLASSIFIER_FEW_SHOT_PER_CLASS = int(os.getenv("CLASSIFIER_FEW_SHOT_PER_CLASS", "2"))
+CLASSIFIER_FEW_SHOT_ENABLED = (
+    os.getenv("CLASSIFIER_FEW_SHOT_ENABLED", "true").strip().lower() == "true"
+)
+
+# Circuit breaker por agente — protege contra instabilidade em agentes individuais.
+CIRCUIT_BREAKER_ENABLED = (
+    os.getenv("CIRCUIT_BREAKER_ENABLED", "true").strip().lower() == "true"
+)
+# Número de falhas consecutivas para abrir o circuito.
+CIRCUIT_BREAKER_FAILURE_THRESHOLD = int(os.getenv("CIRCUIT_BREAKER_FAILURE_THRESHOLD", "3"))
+# Tempo em segundos antes de tentar reabrir (half-open probe).
+CIRCUIT_BREAKER_RECOVERY_SEC = float(os.getenv("CIRCUIT_BREAKER_RECOVERY_SEC", "60"))
+
+# Adaptive timeout por agente — calculado via p95 de latência real.
+# Valores min/max que clampam o timeout adaptativo.
+AGENT_TIMEOUT_MIN_SEC = float(os.getenv("AGENT_TIMEOUT_MIN_SEC", "8"))
+AGENT_TIMEOUT_MAX_SEC = float(os.getenv("AGENT_TIMEOUT_MAX_SEC", "45"))
+# Número mínimo de amostras necessárias antes de adaptar (antes usa max).
+AGENT_TIMEOUT_WINDOW = int(os.getenv("AGENT_TIMEOUT_WINDOW", "10"))
+
 # Modelo usado para gerar EMBEDDINGS (vetores dos documentos e queries).
 # text-embedding-3-small gera vetores de 1536 dimensÃµes.
-# Ã‰ o modelo recomendado pela OpenAI para RAG â€” barato e eficiente.
+# Ã‰ o modelo recomendado pela OpenAI para RAG â€" barato e eficiente.
 # IMPORTANTE: se trocar o modelo, os vetores existentes ficam incompatÃ­veis.
 # Seria necessÃ¡rio re-ingerir todos os documentos.
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
@@ -116,7 +130,7 @@ EMBEDDING_DIMENSION = int(os.getenv("EMBEDDING_DIMENSION", "1536"))
 
 
 # ============================================================
-# BANCO DE DADOS â€” Duas conexÃµes separadas
+# BANCO DE DADOS â€" Duas conexÃµes separadas
 # ============================================================
 
 # Connection string do SUPABASE (vector store).
@@ -167,19 +181,19 @@ HETZNER_DB_PREPARE_THRESHOLD = _parse_optional_non_negative_int_env(
 
 
 # ============================================================
-# RAG â€” ConfiguraÃ§Ãµes de busca e retrieval
+# RAG â€" ConfiguraÃ§Ãµes de busca e retrieval
 # ============================================================
 
 # Tipo de busca padrÃ£o. Controla como os chunks sÃ£o recuperados.
 # OpÃ§Ãµes disponÃ­veis:
-#   "vector"       â†’ busca apenas por similaridade de cosseno (embedding)
-#   "text"         â†’ busca apenas por full-text search (FTS, palavras-chave)
-#   "hybrid_rrf"   â†’ combina vector + text com Reciprocal Rank Fusion
-#   "hybrid_union" â†’ combina vector + text com uniÃ£o simples (para comparaÃ§Ã£o)
+#   "vector"       â†' busca apenas por similaridade de cosseno (embedding)
+#   "text"         â†' busca apenas por full-text search (FTS, palavras-chave)
+#   "hybrid_rrf"   â†' combina vector + text com Reciprocal Rank Fusion
+#   "hybrid_union" â†' combina vector + text com uniÃ£o simples (para comparaÃ§Ã£o)
 #
 # RecomendaÃ§Ã£o por fase:
-#   Fase 1 (inÃ­cio):     "vector"     â€” simples, funciona bem para 80% dos casos
-#   Fase 2 (refinamento): "hybrid_rrf" â€” melhora busca por termos exatos (legislaÃ§Ã£o)
+#   Fase 1 (inÃ­cio):     "vector"     â€" simples, funciona bem para 80% dos casos
+#   Fase 2 (refinamento): "hybrid_rrf" â€" melhora busca por termos exatos (legislaÃ§Ã£o)
 DEFAULT_SEARCH_TYPE = os.getenv("DEFAULT_SEARCH_TYPE", "vector")
 
 # Quantidade de chunks retornados pela busca.
@@ -190,21 +204,21 @@ DEFAULT_K = int(os.getenv("DEFAULT_K", "5"))
 
 # Limiar mÃ­nimo de similaridade para incluir um chunk nos resultados.
 # Score = 1 - distÃ¢ncia_cosseno. Varia de 0 (nada similar) a 1 (idÃªntico).
-# 0.3 Ã© conservador â€” inclui chunks "razoavelmente" relevantes.
-# 0.5 Ã© mais restritivo â€” sÃ³ chunks bem relevantes.
+# 0.3 Ã© conservador â€" inclui chunks "razoavelmente" relevantes.
+# 0.5 Ã© mais restritivo â€" sÃ³ chunks bem relevantes.
 # None = sem limiar (retorna os top K independente do score).
 MATCH_THRESHOLD = float(os.getenv("MATCH_THRESHOLD", "0.3")) if os.getenv("MATCH_THRESHOLD") else None
 
 
 # ============================================================
-# RERANKING â€” ReordenaÃ§Ã£o dos resultados (opcional)
+# RERANKING â€" ReordenaÃ§Ã£o dos resultados (opcional)
 # ============================================================
 
 # Reranker a usar apÃ³s a busca. O reranker recebe os top N candidatos
 # e reordena por relevÃ¢ncia real em relaÃ§Ã£o Ã  pergunta.
 # OpÃ§Ãµes:
-#   "none"   â†’ sem reranking (usa a ordem da busca diretamente)
-#   "cohere" â†’ usa o modelo rerank-english-v3.0 da Cohere
+#   "none"   â†' sem reranking (usa a ordem da busca diretamente)
+#   "cohere" â†' usa o modelo rerank-english-v3.0 da Cohere
 #
 # RecomendaÃ§Ã£o: comece com "none". Ative "cohere" nos agentes 3 e 5
 # (regulatÃ³rios e defeitos) quando tiver dados reais para comparar.
@@ -221,7 +235,7 @@ RERANK_CANDIDATES = int(os.getenv("RERANK_CANDIDATES", "24"))
 
 
 # ============================================================
-# HyDE â€” Hypothetical Document Embeddings (opcional)
+# HyDE â€" Hypothetical Document Embeddings (opcional)
 # ============================================================
 
 # HyDE gera um "documento hipotÃ©tico" a partir da pergunta do usuÃ¡rio
@@ -237,13 +251,13 @@ RERANK_CANDIDATES = int(os.getenv("RERANK_CANDIDATES", "24"))
 USE_HYDE = os.getenv("USE_HYDE", "false").lower() == "true"
 
 # Modelo usado para gerar o documento hipotÃ©tico (HyDE).
-# gpt-4o-mini Ã© suficiente â€” o documento nÃ£o precisa ser perfeito,
+# gpt-4o-mini Ã© suficiente â€" o documento nÃ£o precisa ser perfeito,
 # sÃ³ precisa estar no "espaÃ§o semÃ¢ntico" certo.
 HYDE_LLM_MODEL = os.getenv("HYDE_LLM_MODEL", "gpt-4o-mini")
 
 
 # ============================================================
-# QUERY REWRITING â€” Expansao de consulta (opcional)
+# QUERY REWRITING â€" Expansao de consulta (opcional)
 # ============================================================
 # Gera variacoes tecnicas da pergunta antes da busca no RAG.
 # Trade-off: melhora recall para perguntas mal formuladas, mas adiciona
@@ -403,7 +417,7 @@ WEB_FALLBACK_ALLOWED_DOMAINS = [
 
 
 # ============================================================
-# CHAT MEMORY â€” ConfiguraÃ§Ãµes de memÃ³ria de conversa
+# CHAT MEMORY â€" ConfiguraÃ§Ãµes de memÃ³ria de conversa
 # ============================================================
 
 # Quantas mensagens anteriores carregar do histÃ³rico por sessÃ£o.
@@ -411,9 +425,40 @@ WEB_FALLBACK_ALLOWED_DOMAINS = [
 # Mais histÃ³rico = mais contexto para o LLM, mas mais tokens consumidos.
 MEMORY_WINDOW = int(os.getenv("MEMORY_WINDOW", "10"))
 
+# ============================================================
+# MEMORY SUMMARIZATION — compressão de histórico longo
+# ============================================================
+# Quando a sessão excede MEMORY_SUMMARIZATION_THRESHOLD mensagens,
+# as mais antigas são comprimidas em um parágrafo de contexto via LLM
+# e persistidas como role="summary" no banco.
+# Isso garante que informações técnicas (pH, temperatura, normativas)
+# nunca sejam perdidas silenciosamente por overflow de janela.
+#
+# Comportamento:
+#   - Compressão é cumulativa: um resumo existente é incluído como
+#     entrada do novo, garantindo contexto em sessões muito longas.
+#   - Executada em background após cada save_chat_turn — zero impacto
+#     na latência do response ao usuário.
+#   - Fail-safe absoluto: qualquer falha é logada e ignorada.
+#
+# Defaults conservadores:
+#   THRESHOLD=20  → 2× MEMORY_WINDOW, aciona na 11ª troca de mensagens.
+#   KEEP_RECENT=10 → mantém o mesmo número de mensagens que MEMORY_WINDOW.
+MEMORY_SUMMARIZATION_ENABLED = (
+    os.getenv("MEMORY_SUMMARIZATION_ENABLED", "true").strip().lower() == "true"
+)
+MEMORY_SUMMARIZATION_MODEL = os.getenv("MEMORY_SUMMARIZATION_MODEL", "gpt-4o-mini")
+# Total de mensagens não-summary que dispara a compressão.
+MEMORY_SUMMARIZATION_THRESHOLD = int(os.getenv("MEMORY_SUMMARIZATION_THRESHOLD", "20"))
+# Quantas mensagens recentes preservar verbatim após a compressão.
+# Deve ser igual a MEMORY_WINDOW para manter sempre a janela cheia.
+MEMORY_SUMMARIZATION_KEEP_RECENT = int(os.getenv("MEMORY_SUMMARIZATION_KEEP_RECENT", "10"))
+# Timeout da chamada LLM de sumarização (segundos).
+MEMORY_SUMMARIZATION_TIMEOUT_SEC = float(os.getenv("MEMORY_SUMMARIZATION_TIMEOUT_SEC", "8.0"))
+
 
 # ============================================================
-# SERVIDOR â€” ConfiguraÃ§Ãµes do FastAPI
+# SERVIDOR â€" ConfiguraÃ§Ãµes do FastAPI
 # ============================================================
 
 # Host e porta onde o servidor escuta.
@@ -439,14 +484,14 @@ WEBHOOK_API_KEYS = [
 
 
 # ============================================================
-# INGESTÃƒO â€” ConfiguraÃ§Ãµes do pipeline de documentos
+# INGESTÃƒO â€" ConfiguraÃ§Ãµes do pipeline de documentos
 # ============================================================
 
 # EstratÃ©gia de chunking padrÃ£o para ingestÃ£o.
 # OpÃ§Ãµes: "fixed", "markdown", "semantic"
-#   "fixed"    â†’ corta por tamanho fixo (chunk_size) com overlap
-#   "markdown" â†’ corta por cabeÃ§alhos Markdown (##, ###)
-#   "semantic" â†’ corta por mudanÃ§a de significado (usa embeddings)
+#   "fixed"    â†' corta por tamanho fixo (chunk_size) com overlap
+#   "markdown" â†' corta por cabeÃ§alhos Markdown (##, ###)
+#   "semantic" â†' corta por mudanÃ§a de significado (usa embeddings)
 #
 # "markdown" Ã© o melhor para documentos tÃ©cnicos e legislaÃ§Ã£o
 # (preserva a estrutura de seÃ§Ãµes e artigos).
@@ -494,7 +539,28 @@ MAX_INGEST_FILE_SIZE_MB = int(os.getenv("MAX_INGEST_FILE_SIZE_MB", "50"))
 
 
 # ============================================================
-# VALIDAÃ‡ÃƒO â€” Verifica configuraÃ§Ãµes crÃ­ticas no startup
+# ARQUITETURA RAG — V1 orquestrador vs V2 agente unico
+# ============================================================
+# RAG_ARCHITECTURE controla qual pipeline e ativado no endpoint /webhook/orquestrador.
+# Os endpoints /webhook/agente-{N} sempre usam o agente especialista V1.
+# Valores: orchestrator (V1 padrao) ou single_agent (V2 simplificado)
+RAG_ARCHITECTURE = os.getenv("RAG_ARCHITECTURE", "orchestrator").strip().lower()
+SINGLE_AGENT_MAX_TABLES = int(os.getenv("SINGLE_AGENT_MAX_TABLES", "2"))
+SINGLE_AGENT_K_PER_TABLE = int(os.getenv("SINGLE_AGENT_K_PER_TABLE", "5"))
+_sa_search_type_raw = os.getenv("SINGLE_AGENT_SEARCH_TYPE", "hybrid_rrf").strip()
+SINGLE_AGENT_SEARCH_TYPE = _sa_search_type_raw if _sa_search_type_raw else None
+SINGLE_AGENT_ANSWER_TIMEOUT_SEC = float(os.getenv("SINGLE_AGENT_ANSWER_TIMEOUT_SEC", "30"))
+SINGLE_AGENT_CLASSIFIER_MODEL = os.getenv("SINGLE_AGENT_CLASSIFIER_MODEL", "gpt-4o-mini").strip()
+SINGLE_AGENT_CLASSIFIER_TIMEOUT_SEC = float(os.getenv("SINGLE_AGENT_CLASSIFIER_TIMEOUT_SEC", "8"))
+SINGLE_AGENT_CLASSIFIER_CACHE_SIZE = int(os.getenv("SINGLE_AGENT_CLASSIFIER_CACHE_SIZE", "512"))
+# Busca regulatoria complementar — sempre executada em paralelo com a busca principal
+# Chunks incluidos no contexto apenas se score >= SINGLE_AGENT_REGULATORY_MIN_SCORE
+SINGLE_AGENT_REGULATORY_K = int(os.getenv("SINGLE_AGENT_REGULATORY_K", "2"))
+SINGLE_AGENT_REGULATORY_MIN_SCORE = float(os.getenv("SINGLE_AGENT_REGULATORY_MIN_SCORE", "0.015"))
+
+
+# ============================================================
+# VALIDAÃ‡ÃƒO â€" Verifica configuraÃ§Ãµes crÃ­ticas no startup
 # ============================================================
 
 def validate_config():
@@ -526,4 +592,3 @@ def validate_config():
         raise EnvironmentError(msg)
     
     return True
-

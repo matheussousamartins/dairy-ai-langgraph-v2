@@ -109,6 +109,23 @@ _DOMAIN_SIGNALS: frozenset[str] = frozenset({
     "corante", "espessante", "estabilizante",
 })
 
+# Tokens de linguagem social/cortesia.
+# Quando a query inteira é composta APENAS destes tokens, trata-se de uma
+# saudação ou troca social — não deve ser interceptada pela clarificação.
+# O agente já responde saudações sem RAG (via _looks_like_greeting_only em base_agent).
+_SOCIAL_TOKENS: frozenset[str] = frozenset({
+    # Saudações
+    "oi", "ola", "bom", "boa", "dia", "tarde", "noite", "ei", "hey",
+    # Estado / cortesia
+    "tudo", "bem", "e", "ai", "como", "vai", "voce",
+    # Despedidas
+    "ate", "tchau", "adeus",
+    # Agradecimentos
+    "obrigado", "obrigada", "valeu",
+    # Confirmações / acknowledgments
+    "ok", "certo", "sim", "nao", "claro", "perfeito", "entendi", "entendido",
+})
+
 # Marcadores de vagueza explícita — indicam que a query provavelmente
 # não tem especificidade suficiente para um retrieval útil.
 _VAGUE_MARKERS: tuple[str, ...] = (
@@ -181,6 +198,11 @@ def _is_clarification_eligible(query: str) -> bool:
     folded = _fold_accents(cleaned)
     tokens = set(re.findall(r"[^\W_]+", folded, flags=re.UNICODE))
     if tokens & _DOMAIN_SIGNALS:
+        return False
+
+    # Saudações e trocas sociais: query composta apenas de tokens sociais.
+    # O agente já sabe responder sem RAG — clarificação não deve interceptar.
+    if tokens and tokens.issubset(_SOCIAL_TOKENS):
         return False
 
     if any(m in cleaned for m in _VAGUE_MARKERS):

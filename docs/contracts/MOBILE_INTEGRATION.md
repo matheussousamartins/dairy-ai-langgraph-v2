@@ -1,9 +1,7 @@
 # DairyApp AI — Guia de Integração Mobile
 
-**Versão:** 1.1  
+**Versão:** 1.2  
 **Atualizado:** 2026-05-04  
-**Público:** Desenvolvedor do app mobile (React Native / Flutter / nativo)
-
 ---
 
 ## Visão Geral
@@ -14,7 +12,7 @@ O backend é um sistema multiagente RAG especializado em tecnologia de laticíni
 POST /webhook/orquestrador/stream
 ```
 
-Esse endpoint recebe a pergunta do usuário, roteia internamente para os agentes corretos (Tecnologia de Queijos e/ou Regulatório), consolida a resposta e transmite os tokens em tempo real via SSE — padrão de mercado para apps de chat com LLM.
+Esse endpoint recebe a pergunta do usuário, roteia internamente para os agentes corretos (Tecnologia de Queijos e/ou Regulatório [por enquanto], depois os outros agentes serão disponibilizados), consolida a resposta e transmite os tokens em tempo real via SSE — padrão de mercado para apps de chat com LLM.
 
 Não é necessário conhecer os agentes internos. O orquestrador cuida disso.
 
@@ -287,11 +285,80 @@ Usuário inicia nova conversa
 
 ---
 
+## Endpoints de Stream Disponíveis
+
+O app tem **dois modos de chat**, cada um com seu endpoint.
+
+---
+
+### Modo 1 — Assistente Geral (padrão)
+
+```
+POST /webhook/orquestrador/stream
+```
+
+Roteamento inteligente: o backend decide quais agentes consultar e consolida a resposta. Use para chat livre, sem domínio fixo. Lida com perguntas que cruzam domínios (ex: técnico + regulatório).
+
+---
+
+### Modo 2 — Agente Especialista Direto
+
+```
+POST /webhook/agente-{agent_id}/stream
+```
+
+Acessa um especialista diretamente, sem orquestrador. Use quando o usuário seleciona explicitamente um domínio no app (ex: "Falar com especialista em Queijos").
+
+#### Agentes disponíveis
+
+| `agent_id` | Especialidade |
+|-----------|---------------|
+| `1` | Tecnologia de Queijos |
+| `2` | Fermentados Lácteos |
+| `3` | Legislação e Regulatório |
+| `4` | Qualidade do Leite |
+| `5` | Diagnóstico de Defeitos |
+| `6` | Formulação e Desenvolvimento |
+
+#### Request — formato idêntico ao orquestrador
+
+```http
+POST /webhook/agente-1/stream
+Content-Type: application/json
+X-API-Key: sua-chave-aqui
+```
+
+```json
+{
+  "message": "Qual o pH ideal na filagem da mussarela?",
+  "session_id": "a3f7c2d1-4e5b-4c8a-9f2b-1d3e5f7a9b0c",
+  "user_profile": {
+    "knowledgeLevel": "ADVANCED",
+    "role": "queijeiro"
+  }
+}
+```
+
+#### Eventos SSE — idênticos ao orquestrador
+
+Mesmos eventos: `chunk`, `final`, `error`, `trace`. O evento `final` inclui o `agent_id` do agente que respondeu.
+
+#### Quando usar cada modo
+
+| Situação | Endpoint |
+|----------|----------|
+| Chat livre / pergunta sem domínio definido | `/webhook/orquestrador/stream` |
+| Usuário seleciona um especialista no app | `/webhook/agente-{id}/stream` |
+| Pergunta cruza dois domínios (técnico + legal) | `/webhook/orquestrador/stream` |
+| Domínio fixo e menor latência é prioridade | `/webhook/agente-{id}/stream` |
+
+> **Atenção:** agentes individuais não têm roteamento. Uma pergunta fora do domínio selecionado será respondida pelo especialista escolhido de qualquer forma — sem redirecionamento automático. O orquestrador é mais resiliente a perguntas ambíguas.
+
+---
+
 ## O que NÃO usar no App
 
-Os endpoints `/webhook/agente-{0..6}` e `/webhook/orquestrador` (sem stream) **existem mas são para uso interno e testes**. O app mobile deve usar **exclusivamente** `/webhook/orquestrador/stream`.
-
-Usar agentes individuais bypassa o roteamento inteligente — a resposta será incompleta para perguntas que cruzam domínios (ex: técnico + regulatório).
+Os endpoints `/webhook/agente-{0..6}` e `/webhook/orquestrador` **sem `/stream`** existem mas são para uso interno e testes. O app deve usar **sempre a versão com `/stream`**.
 
 ---
 
@@ -301,15 +368,12 @@ Usar agentes individuais bypassa o roteamento inteligente — a resposta será i
 - [ ] Configurar `X-API-Key` via variável de ambiente (nunca hardcode)
 - [ ] Implementar geração de UUID v4 por conversa
 - [ ] Persistir `session_id` no storage do app
-- [ ] Implementar consumo de SSE com acumulação de chunks
+- [ ] Implementar consumo de SSE com acumulação de chunks (orquestrador e agentes)
 - [ ] Ignorar eventos `trace` no SSE
 - [ ] Exibir resposta progressivamente conforme chunks chegam
 - [ ] Tratar evento `error` e HTTP `500` com mensagem amigável
 - [ ] Implementar `/health` check na inicialização
 - [ ] Enviar `user_profile` quando o app tiver o perfil do usuário
+- [ ] Definir qual `agent_id` mapeia para cada tela/modo de especialista no app
 
 ---
-
-## Dúvidas
-
-Falar com **Matheus Sousa Martins**.

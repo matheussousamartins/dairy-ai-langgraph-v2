@@ -101,7 +101,7 @@ export async function POST(req: NextRequest, context: { params: Promise<{ thread
       let savedAssistant = false;
       let savedTrace = false;
       const traceEvents: Array<{
-        type: "node_start" | "node_end" | "tool_call" | "tool_result";
+        type: "node_start" | "node_end" | "tool_call" | "tool_result" | "rag_result";
         node?: string;
         tool?: string;
         input?: string;
@@ -153,7 +153,7 @@ export async function POST(req: NextRequest, context: { params: Promise<{ thread
           const payload = JSON.parse(jsonText) as {
             event: string;
             text?: string;
-            type?: "node_start" | "node_end" | "tool_call" | "tool_result";
+            type?: "node_start" | "node_end" | "tool_call" | "tool_result" | "rag_result";
             node?: string;
             tool?: string;
             input?: string;

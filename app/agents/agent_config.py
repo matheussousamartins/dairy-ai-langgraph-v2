@@ -107,9 +107,13 @@ AGENTS: List[Dict[str, Any]] = [
             "mussarela", "mozzarella", "pizza cheese", "pasta filata",
             "coagulação", "filagem", "stretching", "fusibilidade", "browning",
             "maturação", "soro-fermento", "salga", "salmoura", "prensagem",
+            "fermento congelado", "fermentos congelados", "fermento liofilizado",
+            "fermentos liofilizados", "fermento concentrado", "fermentos concentrados",
             "rendimento", "massa", "dessoragem", "soro", "cura",
             "Clostridium", "flora autóctone", "proteólise", "lipólise",
             "acidificação", "umidade", "casca", "defeito",
+            "ejetor", "ejetor de vapor", "termização", "termizacao",
+            "prato sul-mineiro", "litros por dia", "pequena fábrica",
         ],
         "search_config": {
             # Semântica pura cobre bem perguntas técnicas sobre processos (conceituais).

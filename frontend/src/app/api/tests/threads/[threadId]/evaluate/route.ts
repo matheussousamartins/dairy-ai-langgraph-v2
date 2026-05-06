@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ensureAuthorized, unauthorizedResponse } from "@/lib/server-auth";
-import { type TestVerdict } from "@/lib/test-store";
+import { ensureAuthorized, getBearerToken, unauthorizedResponse, verifyConsoleToken } from "@/lib/server-auth";
+import { type EvaluationErrorCategory, type JsonValue, type TestVerdict } from "@/lib/test-store";
 import { getTestEvaluationsRepository } from "@/lib/test-evaluations-repository";
 
 interface EvaluateRequestBody {
@@ -13,6 +13,18 @@ interface EvaluateRequestBody {
   agentId?: string;
   modelId?: string;
   comment?: string;
+  metadata?: Record<string, JsonValue>;
+  errorCategory?: EvaluationErrorCategory;
+  expectedAnswer?: string;
+  answerSource?: string;
+  chosenAgentIds?: number[];
+  primaryAgentId?: string;
+  topRagScore?: number;
+  ragSources?: string[];
+  ragSearchCount?: number;
+  nodeCount?: number;
+  latencyMs?: number;
+  webFallbackUsed?: boolean;
 }
 
 export async function POST(
@@ -36,6 +48,7 @@ export async function POST(
   }
 
   try {
+    const tokenPayload = verifyConsoleToken(getBearerToken(req) ?? "");
     const repository = getTestEvaluationsRepository();
     const result = await repository.upsertEvaluation({
       threadId,
@@ -48,6 +61,19 @@ export async function POST(
       agentId: body.agentId,
       modelId: body.modelId,
       comment: body.comment,
+      evaluatorId: tokenPayload?.sub,
+      metadata: body.metadata,
+      errorCategory: body.errorCategory,
+      expectedAnswer: body.expectedAnswer,
+      answerSource: body.answerSource,
+      chosenAgentIds: body.chosenAgentIds,
+      primaryAgentId: body.primaryAgentId,
+      topRagScore: body.topRagScore,
+      ragSources: body.ragSources,
+      ragSearchCount: body.ragSearchCount,
+      nodeCount: body.nodeCount,
+      latencyMs: body.latencyMs,
+      webFallbackUsed: body.webFallbackUsed,
     });
 
     return NextResponse.json(result);

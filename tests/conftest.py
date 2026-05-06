@@ -68,7 +68,7 @@ def db_supabase():
     
     # Testa conexão
     try:
-        with psycopg.connect(url) as conn:
+        with psycopg.connect(url, connect_timeout=10) as conn:
             with conn.cursor() as cur:
                 cur.execute("SELECT 1")
     except Exception as e:
@@ -85,7 +85,7 @@ def db_supabase():
         if sql_file.exists():
             try:
                 sql = sql_file.read_text(encoding="utf-8")
-                with psycopg.connect(url) as conn:
+                with psycopg.connect(url, connect_timeout=10) as conn:
                     conn.autocommit = True
                     with conn.cursor() as cur:
                         cur.execute(sql)
@@ -108,7 +108,7 @@ def db_hetzner():
         pytest.skip("HETZNER_DB_URL não configurada no .env")
     
     try:
-        with psycopg.connect(url) as conn:
+        with psycopg.connect(url, connect_timeout=10) as conn:
             with conn.cursor() as cur:
                 cur.execute("SELECT 1")
     except Exception as e:
@@ -119,7 +119,7 @@ def db_hetzner():
     if sql_file.exists():
         try:
             sql = sql_file.read_text(encoding="utf-8")
-            with psycopg.connect(url) as conn:
+            with psycopg.connect(url, connect_timeout=10) as conn:
                 conn.autocommit = True
                 with conn.cursor() as cur:
                     cur.execute(sql)

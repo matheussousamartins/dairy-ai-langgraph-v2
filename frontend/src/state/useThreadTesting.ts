@@ -3,8 +3,16 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { type GenesisMessage } from "@/state/useGenesisUI";
 import { useAuth } from "@/state/useAuth";
+import { type EvaluationErrorCategory, type EvaluationStatus, type JsonValue } from "@/lib/test-store";
 
 export type TestVerdict = "correct" | "partial" | "incorrect";
+export type TestErrorCategory = EvaluationErrorCategory;
+
+interface SaveEvaluationOptions {
+  comment?: string;
+  errorCategory?: EvaluationErrorCategory;
+  expectedAnswer?: string;
+}
 
 interface TestSessionMetrics {
   evaluated_count: number;
@@ -39,6 +47,26 @@ interface TestEvaluation {
   agent_id?: string;
   model_id?: string;
   comment?: string;
+  evaluator_id?: string;
+  environment?: string;
+  app_version?: string;
+  git_sha?: string;
+  rag_architecture?: string;
+  prompt_version?: string;
+  retrieval_config_version?: string;
+  error_category?: EvaluationErrorCategory;
+  expected_answer?: string;
+  status?: EvaluationStatus;
+  answer_source?: string;
+  chosen_agent_ids?: number[];
+  primary_agent_id?: string;
+  top_rag_score?: number;
+  rag_sources?: string[];
+  rag_search_count?: number;
+  node_count?: number;
+  latency_ms?: number;
+  web_fallback_used?: boolean;
+  metadata?: Record<string, JsonValue>;
   created_at: string;
   updated_at: string;
 }
@@ -64,6 +92,106 @@ function findPreviousUserQuestion(messages: GenesisMessage[], assistantMessageId
     }
   }
   return "";
+}
+
+function uniqueValues<T>(values: T[]) {
+  return [...new Set(values.filter(Boolean))];
+}
+
+function parseTraceChunks(output?: string) {
+  if (!output) return [] as Array<{ content: string; score: number | null; source: string }>;
+  try {
+    const parsed = JSON.parse(output) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((item) => {
+        if (!item || typeof item !== "object") return null;
+        const row = item as { content?: unknown; score?: unknown; source?: unknown };
+        const score = typeof row.score === "number" ? row.score : null;
+        return {
+          content: typeof row.content === "string" ? row.content : "",
+          score,
+          source: typeof row.source === "string" ? row.source : "",
+        };
+      })
+      .filter((item): item is { content: string; score: number | null; source: string } => Boolean(item));
+  } catch {
+    return [];
+  }
+}
+
+function extractAgentIdsFromTrace(message: GenesisMessage) {
+  const ids = new Set<number>();
+  message.trace?.forEach((event) => {
+    const label = `${event.tool ?? ""} ${event.node ?? ""}`;
+    const baseMatch = label.match(/base[_-](\d+)/i);
+    if (baseMatch?.[1]) ids.add(Number(baseMatch[1]));
+    if (/regulat/i.test(label)) ids.add(3);
+    if (/especialista/i.test(label)) ids.add(1);
+  });
+  return [...ids].filter((item) => Number.isFinite(item));
+}
+
+function buildEvaluationQualitySignals(message: GenesisMessage, threadId: string, question: string) {
+  const trace = message.trace ?? [];
+  const nodeNames = uniqueValues(trace.map((event) => event.node).filter((node): node is string => Boolean(node)));
+  const toolNames = uniqueValues(trace.map((event) => event.tool).filter((tool): tool is string => Boolean(tool)));
+  const ragEvents = trace.filter((event) => event.type === "rag_result" || event.type === "tool_result");
+  const chunks = ragEvents.flatMap((event) => parseTraceChunks(event.output));
+  const sources = uniqueValues(chunks.map((chunk) => chunk.source).filter(Boolean));
+  const scores = chunks
+    .map((chunk) => chunk.score)
+    .filter((score): score is number => typeof score === "number" && Number.isFinite(score));
+  const topRagScore = scores.length > 0 ? Math.max(...scores) : undefined;
+  const ragToolCalls = trace.filter((event) => event.type === "tool_call" && /buscar_base|rag|knowledge|web|tavily/i.test(event.tool ?? ""));
+  const ragSearchCount = Math.max(ragToolCalls.length, ragEvents.length);
+  const nodeCount = trace.filter((event) => event.type === "node_start").length;
+  const timestamps = trace.map((event) => event.ts).filter((ts) => Number.isFinite(ts));
+  const latencyMs = timestamps.length >= 2 ? Math.max(...timestamps) - Math.min(...timestamps) : undefined;
+  const webFallbackUsed =
+    Boolean(message.usedTavily) ||
+    trace.some((event) => /web|internet|tavily|fallback/i.test(`${event.tool ?? ""} ${event.node ?? ""}`));
+  const chosenAgentIds = extractAgentIdsFromTrace(message);
+  const answerSource = webFallbackUsed ? "web_fallback" : ragSearchCount > 0 ? "rag" : nodeNames.includes("respond_direct") ? "direct" : "unknown";
+
+  const metadata: Record<string, JsonValue> = {
+    thread_id: threadId,
+    message_id: message.id,
+    turn_id: message.turnId ?? null,
+    assistant_agent_id: message.agentId ?? null,
+    assistant_model_id: message.modelId ?? null,
+    message_timestamp: message.timestamp,
+    question_length: question.length,
+    answer_length: message.content.length,
+    trace_available: trace.length > 0,
+    trace_summary: {
+      event_count: trace.length,
+      node_names: nodeNames,
+      tool_names: toolNames,
+      rag_event_count: ragEvents.length,
+      tool_call_count: trace.filter((event) => event.type === "tool_call").length,
+      first_ts: timestamps.length ? Math.min(...timestamps) : null,
+      last_ts: timestamps.length ? Math.max(...timestamps) : null,
+    },
+    rag_chunks_preview: chunks.slice(0, 12).map((chunk) => ({
+      source: chunk.source || null,
+      score: chunk.score,
+      content_preview: chunk.content.slice(0, 240),
+    })),
+  };
+
+  return {
+    metadata,
+    answerSource,
+    chosenAgentIds,
+    primaryAgentId: message.agentId,
+    topRagScore,
+    ragSources: sources,
+    ragSearchCount,
+    nodeCount,
+    latencyMs,
+    webFallbackUsed,
+  };
 }
 
 export function useThreadTesting(threadId: string | null, messages: GenesisMessage[]) {
@@ -109,10 +237,12 @@ export function useThreadTesting(threadId: string | null, messages: GenesisMessa
   }, [fetchState]);
 
   const saveEvaluation = useCallback(
-    async (message: GenesisMessage, verdict: TestVerdict, comment?: string) => {
+    async (message: GenesisMessage, verdict: TestVerdict, options?: SaveEvaluationOptions | string) => {
       if (!threadId || !token) return false;
 
       const question = findPreviousUserQuestion(messages, message.id);
+      const normalizedOptions = typeof options === "string" ? { comment: options } : options ?? {};
+      const qualitySignals = buildEvaluationQualitySignals(message, threadId, question);
       setIsSaving(true);
       try {
         const response = await fetch(`/api/tests/threads/${threadId}/evaluate`, {
@@ -130,7 +260,10 @@ export function useThreadTesting(threadId: string | null, messages: GenesisMessa
             answer: message.content,
             agentId: message.agentId,
             modelId: message.modelId,
-            comment,
+            comment: normalizedOptions.comment,
+            errorCategory: verdict === "correct" ? undefined : normalizedOptions.errorCategory,
+            expectedAnswer: normalizedOptions.expectedAnswer,
+            ...qualitySignals,
           }),
         });
 
@@ -160,16 +293,25 @@ export function useThreadTesting(threadId: string | null, messages: GenesisMessa
 
   const evaluateMessage = useCallback(
     async (message: GenesisMessage, verdict: TestVerdict) => {
-      return saveEvaluation(message, verdict, evaluationsByMessageId[message.id]?.comment);
+      const existing = evaluationsByMessageId[message.id];
+      return saveEvaluation(message, verdict, {
+        comment: existing?.comment,
+        errorCategory: existing?.error_category,
+        expectedAnswer: existing?.expected_answer,
+      });
     },
     [evaluationsByMessageId, saveEvaluation],
   );
 
   const updateEvaluationComment = useCallback(
     async (message: GenesisMessage, comment: string) => {
-      const existingVerdict = evaluationsByMessageId[message.id]?.verdict;
-      if (!existingVerdict) return false;
-      return saveEvaluation(message, existingVerdict, comment.trim() || undefined);
+      const existing = evaluationsByMessageId[message.id];
+      if (!existing?.verdict) return false;
+      return saveEvaluation(message, existing.verdict, {
+        comment: comment.trim() || undefined,
+        errorCategory: existing.error_category,
+        expectedAnswer: existing.expected_answer,
+      });
     },
     [evaluationsByMessageId, saveEvaluation],
   );

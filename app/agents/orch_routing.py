@@ -91,6 +91,82 @@ _AGENT_DOMAIN_LABELS: Dict[int, str] = {
     1: "fabricação e tecnologia de queijos",
 }
 
+_ACTIVE_SPECIALIST_IDS: List[int] = [
+    int(agent["agent_id"])
+    for agent in AGENTS
+    if int(agent["agent_id"]) not in _ROUTING_BASELINE_IDS
+    and int(agent["agent_id"]) not in _AGENTS_WITHOUT_KB
+]
+
+
+def _default_specialist_id() -> Optional[int]:
+    """Especialista técnico padrão quando só há um especialista ativo."""
+    return _ACTIVE_SPECIALIST_IDS[0] if len(_ACTIVE_SPECIALIST_IDS) == 1 else None
+
+
+def _route_specialist_with_regulatory() -> List[int]:
+    """Rota técnica mínima: especialista ativo lidera, regulatório complementa."""
+    specialist_id = _default_specialist_id()
+    return _sanitize_agent_ids(
+        ([specialist_id] if specialist_id is not None else [])
+        + [_REGULATORY_BASELINE_ID]
+    )
+
+
+def _needs_regulatory_baseline(text_norm: str) -> bool:
+    """True when Agent 3 is relevant as a legal/regulatory evidence source."""
+    return (
+        _is_legal_requirement_regulatory_signal(text_norm)
+        or _is_normative_regulatory_signal(text_norm)
+        or _is_labeling_regulatory_signal(text_norm)
+        or _is_strong_regulatory_signal(text_norm)
+        or "rtiq" in text_norm
+        or "rotulag" in text_norm
+    )
+
+
+def _is_regulatory_only_question(text_norm: str) -> bool:
+    """True when the query should not spend a specialist call.
+
+    This is intentionally strict. A technical dairy question should consult the
+    specialist first and Agent 3 only as complement. Regulatory-only is reserved
+    for explicit legal requirement / norm / label questions without a clear
+    technical product-process signal.
+    """
+    if not text_norm:
+        return False
+
+    if _is_legal_requirement_regulatory_signal(text_norm):
+        return True
+
+    if not (
+        _is_normative_regulatory_signal(text_norm)
+        or _is_labeling_regulatory_signal(text_norm)
+        or _is_strong_regulatory_signal(text_norm)
+    ):
+        return False
+
+    if _is_strong_cheese_signal(text_norm):
+        return False
+
+    technical_markers = (
+        "processo", "fabricacao", "fabricação", "producao", "produção",
+        "pasteurizacao", "pasteurização", "tratamento", "tratamento termico",
+        "tratamento térmico", "armazenamento", "armazenado", "estocagem",
+        "maturacao", "maturação", "coagulacao", "coagulação", "filagem",
+        "prensagem", "salmoura", "fermento", "cultura", "defeito",
+        "rendimento", "umidade", "temperatura", "ph",
+    )
+    return not any(marker in text_norm for marker in technical_markers)
+
+
+def _is_dairy_domain_query(text_norm: str) -> bool:
+    return _contains_dairy_signal(text_norm) or _is_strong_cheese_signal(text_norm)
+
+
+def _requires_specialist_for_dairy(text_norm: str) -> bool:
+    return _is_dairy_domain_query(text_norm) and not _is_regulatory_only_question(text_norm)
+
 
 # ---------------------------------------------------------------------------
 # Mapa de vizinhança entre especialistas (para fallback de reclassificação)
@@ -356,11 +432,11 @@ def _rule_based_route_impl(user_text: str) -> Optional[List[int]]:
       2. Requisito legal mínimo → [3]
       3. Contexto normativo explícito → [3] ou [1, 3]
       4. Rotulagem/denominação → [3] ou [1, 3]
-      5. Sinal regulatório forte → [3] ou [1, 3]
+      5. Sinal regulatório forte → [3] apenas se for puramente legal; senão [1, 3]
       6. Sinal forte de queijo → [1, 3]
       7. Padrões regex de intenção → [1, 3] ou [3]
       8. Scoring de keywords do Agente 1 → [1, 3]
-      9. Dairy genérico → [3] (baseline seguro)
+      9. Dairy genérico → [1, 3] (especialista lidera, regulatório complementa)
      10. Baixa confiança → None (delega ao LLM)
     """
     text = _normalize_text(_strip_profile_suffix(user_text))
@@ -374,34 +450,36 @@ def _rule_based_route_impl(user_text: str) -> Optional[List[int]]:
     if _is_legal_requirement_regulatory_signal(text):
         return _sanitize_agent_ids([3])
 
-    # Contexto normativo explícito + domínio de queijo → ambos
+    # Contexto normativo explícito: regulatório puro só quando não há sinal técnico.
     if _is_normative_regulatory_signal(text):
-        if _is_strong_cheese_signal(text):
-            return _sanitize_agent_ids([1, 3])
+        if not _is_regulatory_only_question(text):
+            return _route_specialist_with_regulatory()
         return _sanitize_agent_ids([3])
 
     # Rotulagem/denominação de produto lácteo
     if _is_labeling_regulatory_signal(text):
-        if _is_strong_cheese_signal(text):
-            return _sanitize_agent_ids([1, 3])
+        if not _is_regulatory_only_question(text):
+            return _route_specialist_with_regulatory()
         return _sanitize_agent_ids([3])
 
     # Sinal regulatório forte
     if _is_strong_regulatory_signal(text):
-        if _is_strong_cheese_signal(text):
-            return _sanitize_agent_ids([1, 3])
+        if not _is_regulatory_only_question(text):
+            return _route_specialist_with_regulatory()
         return _sanitize_agent_ids([3])
 
     # Sinal forte de tecnologia de queijo
     if _is_strong_cheese_signal(text):
-        return _sanitize_agent_ids([1, 3])
+        return _route_specialist_with_regulatory()
 
     # Padrões de intenção de alta precisão (regex)
     for aid, patterns in _INTENT_PATTERNS_BY_AGENT.items():
         if any(re.search(pat, text) for pat in patterns):
             if aid == 1:
-                return _sanitize_agent_ids([1, 3])
+                return _route_specialist_with_regulatory()
             if aid == 3:
+                if _requires_specialist_for_dairy(text):
+                    return _route_specialist_with_regulatory()
                 return _sanitize_agent_ids([3])
 
     # Scoring de keywords do Agente 1
@@ -415,17 +493,18 @@ def _rule_based_route_impl(user_text: str) -> Optional[List[int]]:
                 hits += 1
 
     if hits >= 2 or weighted >= 3:
-        return _sanitize_agent_ids([1, 3])
+        return _route_specialist_with_regulatory()
     if weighted >= 2 and hits >= 1:
-        return _sanitize_agent_ids([1, 3])
+        return _route_specialist_with_regulatory()
 
-    # Dairy genérico objetivo → delega ao LLM para escolher especialista
+    # Dairy genérico objetivo → especialista ativo + regulatório. Com apenas um
+    # especialista ativo, delegar ao LLM aqui abre a falha intermitente de [3] só.
     if _contains_dairy_signal(text) and _is_objective_question(text):
-        return None
+        return _route_specialist_with_regulatory()
 
-    # Dairy genérico não-objetivo → baseline regulatório seguro
+    # Dairy genérico não-objetivo → mesma rota mínima; a síntese filtra ruído.
     if _contains_dairy_signal(text):
-        return _sanitize_agent_ids([3])
+        return _route_specialist_with_regulatory()
 
     # Sem sinal dairy → delega ao LLM classifier
     return None
@@ -505,13 +584,25 @@ def _recalibrate_confidence(
 # ---------------------------------------------------------------------------
 
 def _apply_dairy_hard_constraints(route_text: str, agent_ids: List[int]) -> List[int]:
-    """Garante que Agent 3 (regulatório) está presente em toda pergunta de laticínios."""
+    """Aplica o contrato mínimo para perguntas de laticínios.
+
+    Pergunta técnica: especialista ativo primeiro + Agent 3 como complemento.
+    Pergunta puramente legal: Agent 3 sozinho.
+    """
     if not agent_ids:
         return []
     text_norm = _normalize_text(route_text)
-    if not _contains_dairy_signal(text_norm):
+    if not _is_dairy_domain_query(text_norm):
         return agent_ids
+
+    if _is_regulatory_only_question(text_norm):
+        return _sanitize_agent_ids([_REGULATORY_BASELINE_ID])
+
     out = list(agent_ids)
+    if not any(aid != _REGULATORY_BASELINE_ID for aid in out):
+        specialist_id = _default_specialist_id()
+        if specialist_id is not None:
+            out.insert(0, specialist_id)
     if _REGULATORY_BASELINE_ID not in out:
         out.append(_REGULATORY_BASELINE_ID)
     return _sanitize_agent_ids(out)
@@ -527,18 +618,21 @@ def _apply_domain_guardrails(
     ids = _sanitize_agent_ids(agent_ids)
     alts = _sanitize_agent_ids(alternatives)
 
-    if not _contains_dairy_signal(text_norm):
+    if not _is_dairy_domain_query(text_norm):
         return ids, alts
 
-    # Requisito legal: somente Agent 3, sem especialistas concorrentes
-    if _is_legal_requirement_regulatory_signal(text_norm):
+    # Regulatório puro: somente Agent 3, sem especialistas concorrentes
+    if _is_regulatory_only_question(text_norm):
         ids = _sanitize_agent_ids([_REGULATORY_BASELINE_ID])
         alts = []
         return ids, alts
 
-    # Regulatório forte sem contexto de queijo: remove especialistas das alternativas
-    if _is_strong_regulatory_signal(text_norm) and not _is_strong_cheese_signal(text_norm):
-        alts = [aid for aid in alts if aid == _REGULATORY_BASELINE_ID]
+    if _requires_specialist_for_dairy(text_norm) and not any(
+        aid != _REGULATORY_BASELINE_ID for aid in ids
+    ):
+        specialist_id = _default_specialist_id()
+        if specialist_id is not None:
+            ids = _sanitize_agent_ids([specialist_id] + ids)
 
     return ids, alts
 
@@ -565,12 +659,13 @@ def _build_execution_plan(
         return []
 
     text_norm = _normalize_text(route_text)
-    has_dairy_signal = _contains_dairy_signal(text_norm)
+    has_dairy_signal = _is_dairy_domain_query(text_norm)
     has_specialist = any(aid != _REGULATORY_BASELINE_ID for aid in chosen)
     is_dairy_route = has_dairy_signal or has_specialist or _REGULATORY_BASELINE_ID in chosen
 
     if is_dairy_route:
-        # Agent 3 sempre presente em rotas de laticínios
+        # Agent 3 entra como copiloto em rotas dairy; a evidência dele só
+        # complementa se passar no filtro de relevância do consolidador.
         if _REGULATORY_BASELINE_ID not in chosen:
             chosen.append(_REGULATORY_BASELINE_ID)
         chosen = _sanitize_agent_ids(chosen)
@@ -582,16 +677,20 @@ def _build_execution_plan(
             if aid != _REGULATORY_BASELINE_ID and aid not in specialists:
                 specialists.append(aid)
 
-        # Guardrail: regulatório puro (sem sinal de queijo) → sem especialistas
-        if _is_strong_regulatory_signal(text_norm) and not _is_strong_cheese_signal(text_norm):
+        # Guardrail: regulatório puro → sem especialistas
+        if _is_regulatory_only_question(text_norm):
             specialists = []
+        elif not specialists and _requires_specialist_for_dairy(text_norm):
+            specialist_id = _default_specialist_id()
+            if specialist_id is not None:
+                specialists.append(specialist_id)
 
         max_specialists = _SPECIALISTS_PER_BUCKET.get(bucket, 2)
         if specialists and max_specialists < 1:
             max_specialists = 1
 
         selected = specialists[:max_specialists]
-        # Especialista lidera; Agent 3 fecha o plano como copiloto regulatório
+        # Especialista lidera; Agent 3 fecha o plano como complemento.
         plan = selected + [_REGULATORY_BASELINE_ID] if selected else [_REGULATORY_BASELINE_ID]
     else:
         max_agents = _SPECIALISTS_PER_BUCKET.get(bucket, 2)
@@ -626,8 +725,8 @@ def _infer_domain_primary_from_text(text: str, candidate_ids: List[int]) -> Opti
     if _is_labeling_regulatory_signal(text_norm) and _REGULATORY_BASELINE_ID in ids:
         return _REGULATORY_BASELINE_ID
 
-    # Sinal regulatório forte → Agent 3
-    if _is_strong_regulatory_signal(text_norm) and _REGULATORY_BASELINE_ID in ids:
+    # Sinal regulatório forte só lidera quando a pergunta é regulatória pura.
+    if _is_regulatory_only_question(text_norm) and _REGULATORY_BASELINE_ID in ids:
         return _REGULATORY_BASELINE_ID
 
     # Sinal forte de queijo → Agent 1

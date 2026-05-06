@@ -54,6 +54,7 @@ import os
 import hashlib
 import json
 import re
+import unicodedata
 
 _log = logging.getLogger(__name__)
 
@@ -778,6 +779,20 @@ def search_vector(
     return results
 
 
+def _normalize_fts_query(query: str) -> str:
+    """Strip diacritics so plainto_tsquery('portuguese', ...) tokenizes correctly.
+
+    PostgreSQL's Portuguese Snowball stemmer expects clean ASCII-range input.
+    When accented chars (ã, ç, é...) arrive in the query string, the tokenizer
+    sometimes produces corrupted tokens that don't match the stored tsvector
+    (which was built from the document text going through the same stemmer, but
+    after unaccenting at index time). Stripping accents here mirrors what the
+    index does and restores FTS hit rate from 0 → expected.
+    """
+    nfd = unicodedata.normalize("NFD", query)
+    return "".join(c for c in nfd if unicodedata.category(c) != "Mn")
+
+
 def search_text(
     query: str,
     table_name: str,
@@ -808,6 +823,7 @@ def search_text(
     
     Requer: coluna FTS na tabela (gerada automaticamente pelo SQL schema).
     """
+    fts_query = _normalize_fts_query(query)
     with get_supabase_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -820,11 +836,11 @@ def search_text(
                 ORDER BY score DESC
                 LIMIT %s
                 """.format(table_name),
-                (query, query, k),
+                (fts_query, fts_query, k),
             )
-            
+
             rows = cur.fetchall()
-    
+
     results = []
     for row in rows:
         results.append({
@@ -832,7 +848,7 @@ def search_text(
             "score": float(row[1]) if row[1] is not None else 0.0,
             "metadata": row[2] or {},
         })
-    
+
     return results
 
 

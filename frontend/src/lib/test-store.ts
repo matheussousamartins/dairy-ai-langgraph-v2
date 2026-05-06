@@ -1,4 +1,17 @@
 export type TestVerdict = "correct" | "partial" | "incorrect";
+export type EvaluationErrorCategory =
+  | "retrieval"
+  | "routing"
+  | "consolidation"
+  | "hallucination"
+  | "missing_kb"
+  | "regulatory_conflict"
+  | "wrong_scope"
+  | "ui"
+  | "other";
+
+export type EvaluationStatus = "new" | "accepted" | "triaged" | "fixed" | "ignored" | "regression_test_added";
+export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
 export interface StoreTestEvaluation {
   id: string;
@@ -13,6 +26,26 @@ export interface StoreTestEvaluation {
   agent_id?: string;
   model_id?: string;
   comment?: string;
+  evaluator_id?: string;
+  environment?: string;
+  app_version?: string;
+  git_sha?: string;
+  rag_architecture?: string;
+  prompt_version?: string;
+  retrieval_config_version?: string;
+  error_category?: EvaluationErrorCategory;
+  expected_answer?: string;
+  status?: EvaluationStatus;
+  answer_source?: string;
+  chosen_agent_ids?: number[];
+  primary_agent_id?: string;
+  top_rag_score?: number;
+  rag_sources?: string[];
+  rag_search_count?: number;
+  node_count?: number;
+  latency_ms?: number;
+  web_fallback_used?: boolean;
+  metadata?: Record<string, JsonValue>;
   created_at: string;
   updated_at: string;
 }
@@ -158,6 +191,26 @@ export function upsertThreadEvaluation(input: {
   agentId?: string;
   modelId?: string;
   comment?: string;
+  evaluatorId?: string;
+  environment?: string;
+  appVersion?: string;
+  gitSha?: string;
+  ragArchitecture?: string;
+  promptVersion?: string;
+  retrievalConfigVersion?: string;
+  errorCategory?: EvaluationErrorCategory;
+  expectedAnswer?: string;
+  status?: EvaluationStatus;
+  answerSource?: string;
+  chosenAgentIds?: number[];
+  primaryAgentId?: string;
+  topRagScore?: number;
+  ragSources?: string[];
+  ragSearchCount?: number;
+  nodeCount?: number;
+  latencyMs?: number;
+  webFallbackUsed?: boolean;
+  metadata?: Record<string, JsonValue>;
 }) {
   const store = getStore();
   const session = ensureTestSessionForThread(input.threadId, input.threadTitle);
@@ -179,6 +232,26 @@ export function upsertThreadEvaluation(input: {
     agent_id: input.agentId,
     model_id: input.modelId,
     comment: input.comment,
+    evaluator_id: input.evaluatorId,
+    environment: input.environment,
+    app_version: input.appVersion,
+    git_sha: input.gitSha,
+    rag_architecture: input.ragArchitecture,
+    prompt_version: input.promptVersion,
+    retrieval_config_version: input.retrievalConfigVersion,
+    error_category: input.verdict === "correct" ? undefined : input.errorCategory,
+    expected_answer: input.expectedAnswer,
+    status: input.status ?? (input.verdict === "correct" ? "accepted" : "new"),
+    answer_source: input.answerSource,
+    chosen_agent_ids: input.chosenAgentIds,
+    primary_agent_id: input.primaryAgentId,
+    top_rag_score: input.topRagScore,
+    rag_sources: input.ragSources,
+    rag_search_count: input.ragSearchCount,
+    node_count: input.nodeCount,
+    latency_ms: input.latencyMs,
+    web_fallback_used: input.webFallbackUsed,
+    metadata: input.metadata,
     created_at: existing?.created_at ?? now,
     updated_at: now,
   };

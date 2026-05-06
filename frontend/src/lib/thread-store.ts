@@ -20,7 +20,7 @@ export interface StoreMessage {
 }
 
 export interface StoreTraceEvent {
-  type: "node_start" | "node_end" | "tool_call" | "tool_result";
+  type: "node_start" | "node_end" | "tool_call" | "tool_result" | "rag_result";
   node?: string;
   tool?: string;
   input?: string;

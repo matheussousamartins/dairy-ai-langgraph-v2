@@ -5,14 +5,19 @@ import clsx from "clsx";
 import { Minus, ThumbsDown, ThumbsUp, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { type GenesisMessage } from "@/state/useGenesisUI";
-import { type TestVerdict } from "@/state/useThreadTesting";
+import { type TestErrorCategory, type TestVerdict } from "@/state/useThreadTesting";
 
 interface EvaluationModalProps {
   message: GenesisMessage;
   initialVerdict: TestVerdict;
   initialComment?: string;
+  initialErrorCategory?: TestErrorCategory;
+  initialExpectedAnswer?: string;
   isSaving: boolean;
-  onSave: (verdict: TestVerdict, comment: string) => Promise<void>;
+  onSave: (
+    verdict: TestVerdict,
+    payload: { comment: string; errorCategory?: TestErrorCategory; expectedAnswer?: string },
+  ) => Promise<void>;
   onClose: () => void;
 }
 
@@ -20,12 +25,16 @@ export const EvaluationModal = memo(function EvaluationModal({
   message,
   initialVerdict,
   initialComment,
+  initialErrorCategory,
+  initialExpectedAnswer,
   isSaving,
   onSave,
   onClose,
 }: EvaluationModalProps) {
   const [selectedVerdict, setSelectedVerdict] = useState<TestVerdict>(initialVerdict);
   const [comment, setComment] = useState(initialComment ?? "");
+  const [errorCategory, setErrorCategory] = useState<TestErrorCategory | "">(initialErrorCategory ?? "");
+  const [expectedAnswer, setExpectedAnswer] = useState(initialExpectedAnswer ?? "");
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
@@ -37,10 +46,14 @@ export const EvaluationModal = memo(function EvaluationModal({
   }, [onClose]);
 
   const handleSave = useCallback(async () => {
-    await onSave(selectedVerdict, comment.trim());
+    await onSave(selectedVerdict, {
+      comment: comment.trim(),
+      errorCategory: selectedVerdict === "correct" ? undefined : errorCategory || undefined,
+      expectedAnswer: expectedAnswer.trim() || undefined,
+    });
     setSaved(true);
     setTimeout(onClose, 700);
-  }, [onSave, selectedVerdict, comment, onClose]);
+  }, [onSave, selectedVerdict, comment, errorCategory, expectedAnswer, onClose]);
 
   const preview =
     message.content.length > 140
@@ -69,6 +82,17 @@ export const EvaluationModal = memo(function EvaluationModal({
       active: "border-rose-400/55 bg-rose-500/14 text-rose-200 shadow-[0_0_24px_rgba(251,113,133,0.12)]",
       idle: "border-white/10 bg-white/[0.03] text-[#8f96ab] hover:border-rose-400/30 hover:text-rose-300",
     },
+  ];
+  const errorCategories: Array<{ value: TestErrorCategory; label: string }> = [
+    { value: "retrieval", label: "Busca RAG" },
+    { value: "routing", label: "Roteamento" },
+    { value: "consolidation", label: "Consolidação" },
+    { value: "hallucination", label: "Alucinação" },
+    { value: "missing_kb", label: "Falta na base" },
+    { value: "regulatory_conflict", label: "Conflito regulatório" },
+    { value: "wrong_scope", label: "Escopo errado" },
+    { value: "ui", label: "Interface" },
+    { value: "other", label: "Outro" },
   ];
 
   return (
@@ -130,6 +154,40 @@ export const EvaluationModal = memo(function EvaluationModal({
               ))}
             </div>
           </div>
+
+          {selectedVerdict !== "correct" ? (
+            <div className="mb-5 grid gap-4 sm:grid-cols-2">
+              <div>
+                <p className="mb-2 text-[10px] uppercase tracking-[0.32em] text-[#8f96ab]">
+                  Causa provável
+                </p>
+                <select
+                  value={errorCategory}
+                  onChange={(e) => setErrorCategory(e.target.value as TestErrorCategory | "")}
+                  className="h-11 w-full rounded-2xl border border-white/8 bg-[rgba(255,255,255,0.025)] px-3 text-sm text-[#d8dcec] focus:border-[rgba(176,111,255,0.36)] focus:outline-none focus:ring-2 focus:ring-[rgba(139,61,255,0.12)]"
+                >
+                  <option value="">Sem classificar</option>
+                  {errorCategories.map((item) => (
+                    <option key={item.value} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <p className="mb-2 text-[10px] uppercase tracking-[0.32em] text-[#8f96ab]">
+                  Resposta esperada
+                </p>
+                <textarea
+                  value={expectedAnswer}
+                  onChange={(e) => setExpectedAnswer(e.target.value)}
+                  placeholder="Opcional"
+                  rows={2}
+                  className="h-11 min-h-11 w-full resize-y rounded-2xl border border-white/8 bg-[rgba(255,255,255,0.025)] px-3 py-2 text-sm text-[#d8dcec] placeholder:text-[#414861] focus:border-[rgba(176,111,255,0.36)] focus:outline-none focus:ring-2 focus:ring-[rgba(139,61,255,0.12)]"
+                />
+              </div>
+            </div>
+          ) : null}
 
           {/* Comment */}
           <div className="mb-6">

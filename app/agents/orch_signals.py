@@ -73,6 +73,8 @@ def _load_routing_rules() -> Dict[str, Any]:
     domain = raw.get("domain_signals", {}) or {}
     regulatory = domain.get("regulatory", {}) or {}
     cheese = domain.get("cheese", {}) or {}
+    fermented = domain.get("fermented", {}) or {}
+    quality = domain.get("quality_leite", {}) or {}
     noise = raw.get("noise_control", {}) or {}
 
     # Padrões de intenção (apenas agentes 1 e 3 são ativos)
@@ -106,6 +108,8 @@ def _load_routing_rules() -> Dict[str, Any]:
         "regulatory_strong_terms": _fs(regulatory.get("strong_terms", [])),
         "legal_requirement_phrases": _fs(regulatory.get("legal_requirement_phrases", [])),
         "cheese_strong_terms": _fs(cheese.get("strong_terms", [])),
+        "domain_signals_fermented": _fs(fermented.get("strong_terms", [])),
+        "domain_signals_quality": _fs(quality.get("strong_terms", [])),
         "intent_patterns_by_agent": intent_patterns,
         "low_precision_keywords": _fs(raw.get("low_precision_keywords", [])),
         "hint_noise_terms": _fs(noise.get("hint_noise_terms", [])),

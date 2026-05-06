@@ -3,6 +3,9 @@ import {
   finalizeTestSession as finalizeInMemoryTestSession,
   getThreadTestState as getInMemoryThreadTestState,
   listTestSessions as listInMemoryTestSessions,
+  type EvaluationErrorCategory,
+  type EvaluationStatus,
+  type JsonValue,
   type StoreTestEvaluation,
   type StoreTestSession,
   type TestVerdict,
@@ -23,6 +26,19 @@ export interface UpsertTestEvaluationInput {
   agentId?: string;
   modelId?: string;
   comment?: string;
+  evaluatorId?: string;
+  metadata?: Record<string, JsonValue>;
+  errorCategory?: EvaluationErrorCategory;
+  expectedAnswer?: string;
+  answerSource?: string;
+  chosenAgentIds?: number[];
+  primaryAgentId?: string;
+  topRagScore?: number;
+  ragSources?: string[];
+  ragSearchCount?: number;
+  nodeCount?: number;
+  latencyMs?: number;
+  webFallbackUsed?: boolean;
 }
 
 export interface ThreadTestStateResult {
@@ -68,6 +84,26 @@ interface TestEvaluationRow {
   agent_id: string | null;
   model_id: string | null;
   comment: string | null;
+  evaluator_id: string | null;
+  environment: string | null;
+  app_version: string | null;
+  git_sha: string | null;
+  rag_architecture: string | null;
+  prompt_version: string | null;
+  retrieval_config_version: string | null;
+  error_category: EvaluationErrorCategory | null;
+  expected_answer: string | null;
+  status: EvaluationStatus | null;
+  answer_source: string | null;
+  chosen_agent_ids: number[] | null;
+  primary_agent_id: string | null;
+  top_rag_score: number | null;
+  rag_sources: string[] | null;
+  rag_search_count: number | null;
+  node_count: number | null;
+  latency_ms: number | null;
+  web_fallback_used: boolean | null;
+  metadata: Record<string, JsonValue> | null;
   created_at: string;
   updated_at: string;
 }
@@ -76,6 +112,62 @@ function getConfiguredStorageMode(): TestEvaluationsStorageMode {
   const rawMode = process.env.TEST_EVALUATIONS_STORAGE?.trim().toLowerCase();
   if (rawMode === "supabase") return "supabase";
   return "memory";
+}
+
+function getRuntimeEnvironment() {
+  return (
+    process.env.RAILWAY_ENVIRONMENT_NAME ??
+    process.env.VERCEL_ENV ??
+    process.env.NODE_ENV ??
+    "development"
+  );
+}
+
+function getRuntimeAppVersion() {
+  return process.env.NEXT_PUBLIC_APP_VERSION ?? process.env.APP_VERSION ?? null;
+}
+
+function getRuntimeGitSha() {
+  return (
+    process.env.RAILWAY_GIT_COMMIT_SHA ??
+    process.env.VERCEL_GIT_COMMIT_SHA ??
+    process.env.GIT_SHA ??
+    null
+  );
+}
+
+function getRuntimeRagArchitecture() {
+  return process.env.RAG_ARCHITECTURE ?? process.env.NEXT_PUBLIC_RAG_ARCHITECTURE ?? null;
+}
+
+function normalizeMetadata(input?: Record<string, JsonValue>) {
+  return {
+    ...(input ?? {}),
+    evaluation_schema_version: 2,
+    evaluation_client: "console",
+    captured_at: new Date().toISOString(),
+  } satisfies Record<string, JsonValue>;
+}
+
+function scoreFromVerdict(verdict: TestVerdict) {
+  if (verdict === "correct") return 1;
+  if (verdict === "partial") return 0.5;
+  return 0;
+}
+
+function statusFromVerdict(verdict: TestVerdict): EvaluationStatus {
+  return verdict === "correct" ? "accepted" : "new";
+}
+
+function isSchemaCacheMissingColumnError(error: { code?: string; message?: string } | null) {
+  if (!error) return false;
+  const message = `${error.code ?? ""} ${error.message ?? ""}`.toLowerCase();
+  return (
+    message.includes("pgrst204") ||
+    message.includes("schema cache") ||
+    message.includes("could not find") ||
+    message.includes("column") && message.includes("test_evaluations")
+  );
 }
 
 function mapSession(row: TestSessionRow): StoreTestSession {
@@ -112,6 +204,26 @@ function mapEvaluation(row: TestEvaluationRow): StoreTestEvaluation {
     agent_id: row.agent_id ?? undefined,
     model_id: row.model_id ?? undefined,
     comment: row.comment ?? undefined,
+    evaluator_id: row.evaluator_id ?? undefined,
+    environment: row.environment ?? undefined,
+    app_version: row.app_version ?? undefined,
+    git_sha: row.git_sha ?? undefined,
+    rag_architecture: row.rag_architecture ?? undefined,
+    prompt_version: row.prompt_version ?? undefined,
+    retrieval_config_version: row.retrieval_config_version ?? undefined,
+    error_category: row.error_category ?? undefined,
+    expected_answer: row.expected_answer ?? undefined,
+    status: row.status ?? undefined,
+    answer_source: row.answer_source ?? undefined,
+    chosen_agent_ids: Array.isArray(row.chosen_agent_ids) ? row.chosen_agent_ids : undefined,
+    primary_agent_id: row.primary_agent_id ?? undefined,
+    top_rag_score: row.top_rag_score ?? undefined,
+    rag_sources: Array.isArray(row.rag_sources) ? row.rag_sources : undefined,
+    rag_search_count: row.rag_search_count ?? undefined,
+    node_count: row.node_count ?? undefined,
+    latency_ms: row.latency_ms ?? undefined,
+    web_fallback_used: row.web_fallback_used ?? undefined,
+    metadata: row.metadata ?? undefined,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -207,6 +319,60 @@ const memoryRepository: TestEvaluationsRepository = {
   listSessions: async () => listInMemoryTestSessions(),
 };
 
+function buildEvaluationPayload(
+  sessionId: string,
+  input: UpsertTestEvaluationInput,
+  includeQualityColumns: boolean,
+) {
+  const metadata = normalizeMetadata(input.metadata);
+  const runtimeEnvironment = getRuntimeEnvironment();
+  const runtimeAppVersion = getRuntimeAppVersion();
+  const runtimeGitSha = getRuntimeGitSha();
+  const runtimeRagArchitecture = getRuntimeRagArchitecture();
+
+  const basePayload = {
+    session_id: sessionId,
+    thread_id: input.threadId,
+    message_id: input.messageId,
+    turn_id: input.turnId ?? null,
+    verdict: input.verdict,
+    score: scoreFromVerdict(input.verdict),
+    question: input.question,
+    answer: input.answer,
+    agent_id: input.agentId ?? null,
+    model_id: input.modelId ?? null,
+    comment: input.comment ?? null,
+    metadata,
+  };
+
+  if (!includeQualityColumns) {
+    return basePayload;
+  }
+
+  return {
+    ...basePayload,
+    evaluator_id: input.evaluatorId ?? null,
+    environment: runtimeEnvironment,
+    app_version: runtimeAppVersion,
+    git_sha: runtimeGitSha,
+    rag_architecture: runtimeRagArchitecture,
+    prompt_version: input.metadata?.prompt_version?.toString() ?? null,
+    retrieval_config_version: input.metadata?.retrieval_config_version?.toString() ?? null,
+    error_category: input.verdict === "correct" ? null : input.errorCategory ?? null,
+    expected_answer: input.expectedAnswer ?? null,
+    status: statusFromVerdict(input.verdict),
+    answer_source: input.answerSource ?? null,
+    chosen_agent_ids: input.chosenAgentIds ?? [],
+    primary_agent_id: input.primaryAgentId ?? input.agentId ?? null,
+    top_rag_score: input.topRagScore ?? null,
+    rag_sources: input.ragSources ?? [],
+    rag_search_count: input.ragSearchCount ?? 0,
+    node_count: input.nodeCount ?? 0,
+    latency_ms: input.latencyMs ?? null,
+    web_fallback_used: input.webFallbackUsed ?? false,
+  };
+}
+
 const supabaseRepository: TestEvaluationsRepository = {
   async ensureSessionForThread(threadId: string, title: string) {
     const supabase = getSupabaseAdminClient();
@@ -277,26 +443,35 @@ const supabaseRepository: TestEvaluationsRepository = {
     const { data, error } = await supabase
       .from("test_evaluations")
       .upsert(
-        {
-          session_id: session.id,
-          thread_id: input.threadId,
-          message_id: input.messageId,
-          turn_id: input.turnId ?? null,
-          verdict: input.verdict,
-          score: input.verdict === "correct" ? 1 : input.verdict === "partial" ? 0.5 : 0,
-          question: input.question,
-          answer: input.answer,
-          agent_id: input.agentId ?? null,
-          model_id: input.modelId ?? null,
-          comment: input.comment ?? null,
-        },
+        buildEvaluationPayload(session.id, input, true),
         { onConflict: "session_id,message_id" },
       )
       .select("*")
       .single<TestEvaluationRow>();
 
     if (error) {
-      throw error;
+      if (!isSchemaCacheMissingColumnError(error)) {
+        throw error;
+      }
+
+      const retry = await supabase
+        .from("test_evaluations")
+        .upsert(
+          buildEvaluationPayload(session.id, input, false),
+          { onConflict: "session_id,message_id" },
+        )
+        .select("*")
+        .single<TestEvaluationRow>();
+
+      if (retry.error) {
+        throw retry.error;
+      }
+
+      const updatedSession = await recomputeAndPersistSessionMetrics(session.id);
+      return {
+        session: updatedSession,
+        evaluation: mapEvaluation(retry.data),
+      };
     }
 
     const updatedSession = await recomputeAndPersistSessionMetrics(session.id);

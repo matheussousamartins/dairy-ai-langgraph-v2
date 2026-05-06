@@ -26,13 +26,15 @@ const AGENT_STYLE: Record<string, { accent: string; dot: string }> = {
 };
 
 const MODEL_STYLE: Record<string, { accent: string; dot: string }> = {
-  "gpt-4o-mini": { accent: "border-sky-500/40 bg-sky-500/8", dot: "bg-sky-400" },
-  "gpt-4o": { accent: "border-cyan-500/40 bg-cyan-500/8", dot: "bg-cyan-400" },
-  "gpt-4.1-mini": { accent: "border-indigo-500/40 bg-indigo-500/8", dot: "bg-indigo-400" },
-  "gpt-4.1": { accent: "border-violet-500/40 bg-violet-500/8", dot: "bg-violet-400" },
-  "gpt-4.1-nano": { accent: "border-fuchsia-500/40 bg-fuchsia-500/8", dot: "bg-fuchsia-400" },
-  "claude-3.5-sonnet": { accent: "border-orange-500/40 bg-orange-500/8", dot: "bg-orange-400" },
-  "llama-3.1-70b": { accent: "border-emerald-500/40 bg-emerald-500/8", dot: "bg-emerald-400" },
+  "openai/gpt-4o-mini": { accent: "border-sky-500/40 bg-sky-500/8", dot: "bg-sky-400" },
+  "openai/gpt-4o": { accent: "border-cyan-500/40 bg-cyan-500/8", dot: "bg-cyan-400" },
+  "openai/gpt-4.1-mini": { accent: "border-indigo-500/40 bg-indigo-500/8", dot: "bg-indigo-400" },
+  "openai/gpt-4.1": { accent: "border-violet-500/40 bg-violet-500/8", dot: "bg-violet-400" },
+  "openai/gpt-4.1-nano": { accent: "border-fuchsia-500/40 bg-fuchsia-500/8", dot: "bg-fuchsia-400" },
+  "anthropic/claude-sonnet-4.5": { accent: "border-orange-500/40 bg-orange-500/8", dot: "bg-orange-400" },
+  "google/gemini-2.5-flash": { accent: "border-blue-500/40 bg-blue-500/8", dot: "bg-blue-400" },
+  "meta-llama/llama-3.3-70b-instruct": { accent: "border-emerald-500/40 bg-emerald-500/8", dot: "bg-emerald-400" },
+  "deepseek/deepseek-chat-v3.1": { accent: "border-teal-500/40 bg-teal-500/8", dot: "bg-teal-300" },
 };
 
 const DEFAULT_MODEL_STYLE = { accent: "border-white/15 bg-white/[0.04]", dot: "bg-[#b06fff]" };
@@ -45,7 +47,9 @@ function getFamilyOrder(family: string) {
   if (family === "GPT-4o") return 0;
   if (family === "GPT-4.1") return 1;
   if (family === "Claude") return 2;
-  if (family === "Llama") return 3;
+  if (family === "Gemini") return 3;
+  if (family === "Llama") return 4;
+  if (family === "DeepSeek") return 5;
   return 9;
 }
 
@@ -116,38 +120,38 @@ function ModelCard({
       onClick={onSelect}
       disabled={!isSelectable}
       className={clsx(
-        "flex flex-col gap-3 rounded-2xl border px-4 py-5 text-left transition-all",
+        "min-h-[220px] min-w-0 flex flex-col gap-3 rounded-2xl border px-4 py-5 text-left transition-all",
         !isSelectable && "cursor-not-allowed opacity-65 saturate-50",
         active
           ? `${style.accent} text-white shadow-[0_20px_50px_rgba(0,0,0,0.5)] ring-1 ring-white/10`
           : `${style.accent} text-[#c9cdd6] hover:brightness-125`,
       )}
     >
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <span className={clsx("h-2 w-2 rounded-full", style.dot)} />
-          <span className="text-lg font-semibold uppercase" style={{ fontFamily: "var(--font-condensed)" }}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex items-start gap-2">
+          <span className={clsx("mt-1.5 h-2 w-2 shrink-0 rounded-full", style.dot)} />
+          <span className="min-w-0 text-base font-semibold uppercase leading-tight text-balance" style={{ fontFamily: "var(--font-condensed)" }}>
             {model.label}
           </span>
           <span
             title={model.setupHint ?? model.compatibilityMessage ?? "Sem instrucoes adicionais."}
             aria-label={model.setupHint ?? model.compatibilityMessage ?? "Sem instrucoes adicionais."}
-            className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-white/15 bg-black/20 text-[#8f96ab] transition hover:border-[#8b3dff] hover:text-white"
+            className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-white/15 bg-black/20 text-[#8f96ab] transition hover:border-[#8b3dff] hover:text-white"
           >
             <CircleHelp className="h-3.5 w-3.5" />
           </span>
         </div>
         <span
           className={clsx(
-            "rounded-full border px-2.5 py-0.5 text-[10px] uppercase tracking-[0.3em]",
+            "shrink-0 rounded-full border px-2.5 py-0.5 text-[10px] uppercase tracking-[0.18em]",
             isReady ? "border-emerald-500/30 text-emerald-300" : "border-amber-500/30 text-amber-300",
           )}
         >
           {isReady ? "Pronto" : "Requer setup"}
         </span>
       </div>
-      <span className="text-xs uppercase tracking-[0.25em] text-[#8f96ab]">{model.provider ?? "Modelo"}</span>
-      <span className="text-sm text-[#8f96ab]">{model.description ?? "Modelo disponivel para testes."}</span>
+      <span className="text-xs uppercase tracking-[0.22em] text-[#8f96ab]">{model.provider ?? "Modelo"}</span>
+      <span className="line-clamp-2 text-sm text-[#8f96ab]">{model.description ?? "Modelo disponivel para testes."}</span>
       <span className={clsx("text-xs", isReady ? "text-[#8baaa0]" : "text-amber-200/80")}>
         {model.compatibilityMessage ?? "Verifique a compatibilidade do backend."}
       </span>
@@ -401,8 +405,8 @@ export function TopBar({ onToggleSidebar }: TopBarProps) {
 
       {isMounted && isModelPanelOpen
         ? createPortal(
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(4,6,12,0.92)] px-6 py-10 backdrop-blur-2xl">
-              <div className="relative w-full max-w-4xl rounded-[32px] border border-white/15 bg-[linear-gradient(180deg,rgba(23,26,34,0.96),rgba(11,13,20,0.98))] p-8 text-[#c9cdd6] shadow-[0_40px_90px_rgba(0,0,0,0.65)] ring-1 ring-white/10">
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(4,6,12,0.92)] px-4 py-6 backdrop-blur-2xl sm:px-6 sm:py-10">
+              <div className="relative max-h-[calc(100vh-3rem)] w-full max-w-5xl overflow-y-auto rounded-[28px] border border-white/15 bg-[linear-gradient(180deg,rgba(23,26,34,0.96),rgba(11,13,20,0.98))] p-5 text-[#c9cdd6] shadow-[0_40px_90px_rgba(0,0,0,0.65)] ring-1 ring-white/10 sm:p-8">
                 <div className="mb-6 flex items-center justify-between">
                   <div>
                     <p className="text-[11px] uppercase tracking-[0.4em] text-[#b06fff]/80">Seleção de Modelo</p>
@@ -439,7 +443,7 @@ export function TopBar({ onToggleSidebar }: TopBarProps) {
                           </p>
                         </div>
                       </div>
-                      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                         {group.items.map((model) => (
                           <ModelCard
                             key={model.id}
@@ -459,7 +463,7 @@ export function TopBar({ onToggleSidebar }: TopBarProps) {
                 </div>
                 {hasNonOpenAiModel ? (
                   <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-[#8f96ab]">
-                    Modelos OpenAI funcionam direto com `OPENAI_API_KEY`. Outros providers pedem gateway compatível no backend.
+                    Modelos externos rodam pelo gateway configurado no backend. No OpenRouter, use os IDs com prefixo do provider.
                   </div>
                 ) : null}
                 {selectedModel ? (

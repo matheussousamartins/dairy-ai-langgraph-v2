@@ -12,7 +12,7 @@ import {
 export type Role = "user" | "assistant";
 
 export interface TraceEvent {
-  type: "node_start" | "node_end" | "tool_call" | "tool_result";
+  type: "node_start" | "node_end" | "tool_call" | "tool_result" | "rag_result";
   node?: string;
   tool?: string;
   input?: string;

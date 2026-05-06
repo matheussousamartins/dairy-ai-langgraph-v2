@@ -41,11 +41,19 @@ Salvando no Postgres:
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 import json
+import logging
 import time
 import psycopg
 
-from app.config import MEMORY_WINDOW
+from app.config import (
+    MEMORY_WINDOW,
+    MEMORY_SUMMARIZATION_ENABLED,
+    MEMORY_SUMMARIZATION_THRESHOLD,
+    MEMORY_SUMMARIZATION_KEEP_RECENT,
+)
 from app.db.connection import get_hetzner_conn
+
+_log = logging.getLogger(__name__)
 
 
 def save_memory(
@@ -93,24 +101,32 @@ def load_memory(
     session_id: str,
     limit: Optional[int] = None,
 ) -> List[Dict[str, str]]:
-    """Carrega as ultimas mensagens de uma sessao.
+    """Carrega as últimas mensagens da sessão, incluindo o resumo comprimido se existir.
 
-    Possui retry para falhas transientes de conexao no Postgres.
+    Retorna as N mensagens mais recentes (excluindo role="summary") ordenadas por
+    tempo crescente, precedidas de um entry {"role": "summary", "content": "..."} se
+    houver um resumo de compressão salvo para a sessão.
+
+    O resumo é carregado na mesma transação que as mensagens recentes para consistência.
+    Possui retry para falhas transientes de conexão no Postgres.
     """
     window = limit or MEMORY_WINDOW
 
     rows: list[tuple[str, str]] = []
+    summary_content: Optional[str] = None
+
     for attempt in range(2):
         try:
             with get_hetzner_conn() as conn:
                 with conn.cursor() as cur:
+                    # Mensagens recentes não-summary, ordem cronológica
                     cur.execute(
                         """
                         SELECT role, content
                         FROM (
                             SELECT role, content, created_at
                             FROM chat_memories
-                            WHERE session_id = %s
+                            WHERE session_id = %s AND role != 'summary'
                             ORDER BY created_at DESC
                             LIMIT %s
                         ) sub
@@ -119,6 +135,18 @@ def load_memory(
                         (session_id, window),
                     )
                     rows = cur.fetchall()
+                    # Resumo mais recente (se existir)
+                    cur.execute(
+                        """
+                        SELECT content FROM chat_memories
+                        WHERE session_id = %s AND role = 'summary'
+                        ORDER BY created_at DESC LIMIT 1
+                        """,
+                        (session_id,),
+                    )
+                    summary_row = cur.fetchone()
+                    if summary_row:
+                        summary_content = summary_row[0]
             break
         except psycopg.OperationalError:
             if attempt == 1:
@@ -126,7 +154,10 @@ def load_memory(
             # o pool descarta conexoes BAD; tenta novamente com nova conexao
             time.sleep(0.15)
 
-    return [{"role": row[0], "content": row[1]} for row in rows]
+    result = [{"role": row[0], "content": row[1]} for row in rows]
+    if summary_content:
+        result = [{"role": "summary", "content": summary_content}] + result
+    return result
 
 def clear_memory(session_id: str) -> int:
     """Apaga todo o histórico de uma sessão.
@@ -246,6 +277,128 @@ def save_chat_turn(
                     now,
                 ),
             )
+
+
+def maybe_summarize_memory(session_id: str) -> bool:
+    """Comprime o histórico antigo se a sessão exceder MEMORY_SUMMARIZATION_THRESHOLD.
+
+    Fluxo:
+        1. Conta mensagens não-summary da sessão (query barata).
+        2. Se count ≤ THRESHOLD, retorna False imediatamente (caminho feliz).
+        3. Calcula quantas comprimir: total - MEMORY_SUMMARIZATION_KEEP_RECENT.
+        4. Em uma conexão: carrega as mensagens mais antigas + resumo existente.
+        5. Chama o LLM para gerar novo resumo cumulativo (fora da conexão DB).
+        6. Em outra conexão: deleta as mensagens antigas + resumo antigo,
+           insere o novo resumo em uma única transação.
+
+    Fail-safe absoluto: qualquer exceção é logada e retorna False.
+    Nunca bloqueia nem levanta exceção para o chamador.
+
+    Returns:
+        True se a compressão foi executada com sucesso, False caso contrário.
+    """
+    from app.rag.summarizer import summarize_conversation  # lazy import
+
+    if not MEMORY_SUMMARIZATION_ENABLED:
+        return False
+
+    try:
+        # --- Fase 1: verificar threshold (conexão barata) ---
+        with get_hetzner_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT COUNT(*) FROM chat_memories WHERE session_id = %s AND role != 'summary'",
+                    (session_id,),
+                )
+                total: int = cur.fetchone()[0]
+
+        if total <= MEMORY_SUMMARIZATION_THRESHOLD:
+            return False
+
+        to_compress_count = total - MEMORY_SUMMARIZATION_KEEP_RECENT
+        if to_compress_count <= 0:
+            return False
+
+        # --- Fase 2: carregar dados para sumarização ---
+        with get_hetzner_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, role, content FROM chat_memories
+                    WHERE session_id = %s AND role != 'summary'
+                    ORDER BY created_at ASC
+                    LIMIT %s
+                    """,
+                    (session_id, to_compress_count),
+                )
+                oldest_rows = cur.fetchall()
+
+                cur.execute(
+                    """
+                    SELECT content FROM chat_memories
+                    WHERE session_id = %s AND role = 'summary'
+                    ORDER BY created_at DESC LIMIT 1
+                    """,
+                    (session_id,),
+                )
+                existing_summary_row = cur.fetchone()
+
+        if not oldest_rows:
+            return False
+
+        oldest_messages = [{"id": r[0], "role": r[1], "content": r[2]} for r in oldest_rows]
+
+        # Sumarização cumulativa: inclui resumo existente para não perder contexto.
+        messages_for_summary: List[Dict[str, Any]] = []
+        if existing_summary_row:
+            messages_for_summary.append({"role": "summary", "content": existing_summary_row[0]})
+        messages_for_summary.extend(
+            {"role": m["role"], "content": m["content"]} for m in oldest_messages
+        )
+
+        # --- Fase 3: chamada LLM (fora de conexão DB para não segurar pool) ---
+        new_summary = summarize_conversation(messages_for_summary)
+        if not new_summary:
+            _log.warning(
+                "maybe_summarize_memory: LLM retornou None — histórico preservado [session=%s]",
+                session_id,
+            )
+            return False
+
+        # --- Fase 4: persiste resultado em transação atômica ---
+        ids_to_delete = [m["id"] for m in oldest_messages]
+        now = datetime.utcnow()
+
+        with get_hetzner_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM chat_memories WHERE session_id = %s AND id = ANY(%s)",
+                    (session_id, ids_to_delete),
+                )
+                cur.execute(
+                    "DELETE FROM chat_memories WHERE session_id = %s AND role = 'summary'",
+                    (session_id,),
+                )
+                cur.execute(
+                    "INSERT INTO chat_memories (session_id, role, content, created_at) VALUES (%s, %s, %s, %s)",
+                    (session_id, "summary", new_summary, now),
+                )
+
+        _log.info(
+            "maybe_summarize_memory: %d msgs comprimidas em %d chars [session=%s]",
+            len(oldest_messages),
+            len(new_summary),
+            session_id,
+        )
+        return True
+
+    except Exception as exc:
+        _log.warning(
+            "maybe_summarize_memory: falha silenciosa — %s [session=%s]",
+            exc,
+            session_id,
+        )
+        return False
 
 
 def save_routing_log(

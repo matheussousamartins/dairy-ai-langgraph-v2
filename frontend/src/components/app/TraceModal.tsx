@@ -6,6 +6,7 @@ import { ChevronDown, ChevronUp, Clock3, Play, SearchCheck } from "lucide-react"
 import { type TraceEvent } from "@/state/useGenesisUI";
 
 const NODE_LABEL: Record<string, string> = {
+  // V1 — Orchestrator
   prepare: "Preparar contexto",
   agent: "LLM decidindo",
   tools: "Executando ferramenta",
@@ -15,15 +16,26 @@ const NODE_LABEL: Record<string, string> = {
   respond_direct: "Resposta direta",
   consolidate: "Consolidar respostas",
   fallback_reclassify: "Reclassificação fallback",
+  // V2 — Single-Agent
+  analyze_query: "Analisar consulta",
+  retrieve_context: "Buscar contexto",
+  generate_answer: "Gerar resposta",
+  validate_response: "Validar resposta",
 };
 
 const NODE_COLOR: Record<string, string> = {
+  // V1
   classify: "text-sky-400",
   route: "text-sky-300",
   execute: "text-[#8b3dff]",
   consolidate: "text-violet-400",
   respond_direct: "text-emerald-400",
   fallback_reclassify: "text-amber-400",
+  // V2
+  analyze_query: "text-sky-400",
+  retrieve_context: "text-amber-400",
+  generate_answer: "text-[#8b3dff]",
+  validate_response: "text-emerald-400",
 };
 
 function fmtMs(ms: number): string {
@@ -92,7 +104,7 @@ export function TraceModal({ trace, onClose }: { trace: TraceEvent[]; onClose: (
   const firstTs = trace[0]?.ts ?? Date.now();
   const lastTs = trace[trace.length - 1]?.ts ?? Date.now();
   const totalMs = lastTs - firstTs;
-  const ragCount = trace.filter((event) => event.type === "tool_call").length;
+  const ragCount = trace.filter((event) => event.type === "tool_call" || event.type === "rag_result").length;
   const nodeCount = trace.filter((event) => event.type === "node_start").length;
 
   const ragPairs = useMemo(() => {
@@ -139,6 +151,21 @@ export function TraceModal({ trace, onClose }: { trace: TraceEvent[]; onClose: (
       if (event.type === "node_start" || event.type === "node_end") {
         const label = NODE_LABEL[event.node ?? ""] ?? event.node ?? "";
         lines.push(`[${time}]${relative} ${event.type === "node_start" ? "INÍCIO" : "FIM"} — ${label.toUpperCase()}`);
+      } else if (event.type === "rag_result") {
+        lines.push(`[${time}]${relative} CHUNKS RAG — ${event.tool ?? ""}`);
+        try {
+          const chunks = JSON.parse(event.output ?? "") as RagChunk[];
+          if (Array.isArray(chunks)) {
+            chunks.forEach((chunk, chunkIndex) => {
+              lines.push(
+                `  chunk ${chunkIndex + 1}${chunk.score != null ? ` — score: ${chunk.score}` : ""}${chunk.source ? ` — ${chunk.source}` : ""}`,
+              );
+              lines.push(`    ${chunk.content}`);
+            });
+          }
+        } catch {
+          if (event.output) lines.push(`  ${event.output}`);
+        }
       } else if (event.type === "tool_call") {
         lines.push(`[${time}]${relative} BUSCA RAG — ${event.tool ?? ""}`);
         if (event.input) lines.push(`  query: ${event.input}`);
@@ -305,6 +332,38 @@ export function TraceModal({ trace, onClose }: { trace: TraceEvent[]; onClose: (
                         {pair.ev.output}
                       </pre>
                     ) : null}
+                  </div>
+                );
+              }
+
+              if (event.type === "rag_result") {
+                let chunks: RagChunk[] | null = null;
+                if (event.output) {
+                  try {
+                    const parsed = JSON.parse(event.output);
+                    if (Array.isArray(parsed)) chunks = parsed;
+                  } catch {
+                    // raw
+                  }
+                }
+                return (
+                  <div key={index} className="mb-5">
+                    <div className="flex items-center gap-2 text-amber-400">
+                      <SearchCheck className="h-3.5 w-3.5" />
+                      <span className="text-[11px] uppercase tracking-wider">
+                        Chunks RAG — <span className="text-amber-300">{event.tool}</span>
+                      </span>
+                      <span className="ml-auto text-[10px] text-[#2d3348]">{time}</span>
+                    </div>
+                    {chunks && chunks.length > 0 ? (
+                      <div className="ml-4 mt-1.5 space-y-1.5">
+                        {chunks.map((chunk, chunkIndex) => (
+                          <ChunkCard key={chunkIndex} chunk={chunk} index={chunkIndex} />
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="ml-4 mt-1 text-[11px] text-[#5c6383]">Nenhum chunk encontrado.</div>
+                    )}
                   </div>
                 );
               }

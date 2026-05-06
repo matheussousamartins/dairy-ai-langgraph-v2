@@ -26,7 +26,7 @@ import { useAuth } from "@/state/useAuth";
 import { Alert } from "@/components/ui/alert";
 import { getAgentById } from "@/lib/agent-catalog";
 import { type GenesisMessage, type ModelOption, type TraceEvent } from "@/state/useGenesisUI";
-import { useThreadTesting, type TestVerdict } from "@/state/useThreadTesting";
+import { useThreadTesting, type TestErrorCategory, type TestVerdict } from "@/state/useThreadTesting";
 const LazyEvaluationModal = dynamic(
   () => import("@/components/app/EvaluationModal").then((module) => module.EvaluationModal),
   { ssr: false },
@@ -663,6 +663,8 @@ export function ChatPane() {
     message: GenesisMessage;
     initialVerdict: TestVerdict;
     initialComment?: string;
+    initialErrorCategory?: TestErrorCategory;
+    initialExpectedAnswer?: string;
   } | null>(null);
 
   // Finalization success banner
@@ -743,15 +745,24 @@ export function ChatPane() {
         message,
         initialVerdict: verdict,
         initialComment: existing?.comment,
+        initialErrorCategory: existing?.error_category,
+        initialExpectedAnswer: existing?.expected_answer,
       });
     },
     [evaluationsByMessageId],
   );
 
   const handleModalSave = useCallback(
-    async (verdict: TestVerdict, comment: string) => {
+    async (
+      verdict: TestVerdict,
+      payload: { comment: string; errorCategory?: TestErrorCategory; expectedAnswer?: string },
+    ) => {
       if (!evaluationModal) return;
-      await saveEvaluation(evaluationModal.message, verdict, comment || undefined);
+      await saveEvaluation(evaluationModal.message, verdict, {
+        comment: payload.comment || undefined,
+        errorCategory: payload.errorCategory,
+        expectedAnswer: payload.expectedAnswer,
+      });
     },
     [evaluationModal, saveEvaluation],
   );
@@ -901,6 +912,8 @@ export function ChatPane() {
           message={evaluationModal.message}
           initialVerdict={evaluationModal.initialVerdict}
           initialComment={evaluationModal.initialComment}
+          initialErrorCategory={evaluationModal.initialErrorCategory}
+          initialExpectedAnswer={evaluationModal.initialExpectedAnswer}
           isSaving={isSavingEvaluation}
           onSave={handleModalSave}
           onClose={() => setEvaluationModal(null)}

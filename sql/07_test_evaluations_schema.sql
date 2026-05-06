@@ -43,6 +43,39 @@ create table if not exists public.test_evaluations (
   agent_id text null,
   model_id text null,
   comment text null,
+  evaluator_id text null,
+  environment text not null default 'test',
+  app_version text null,
+  git_sha text null,
+  rag_architecture text null,
+  prompt_version text null,
+  retrieval_config_version text null,
+  error_category text null check (
+    error_category is null or error_category in (
+      'retrieval',
+      'routing',
+      'consolidation',
+      'hallucination',
+      'missing_kb',
+      'regulatory_conflict',
+      'wrong_scope',
+      'ui',
+      'other'
+    )
+  ),
+  expected_answer text null,
+  status text not null default 'new' check (
+    status in ('new', 'accepted', 'triaged', 'fixed', 'ignored', 'regression_test_added')
+  ),
+  answer_source text null,
+  chosen_agent_ids jsonb not null default '[]'::jsonb,
+  primary_agent_id text null,
+  top_rag_score numeric(10,6) null,
+  rag_sources jsonb not null default '[]'::jsonb,
+  rag_search_count integer not null default 0,
+  node_count integer not null default 0,
+  latency_ms integer null,
+  web_fallback_used boolean not null default false,
   metadata jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now()),
@@ -66,6 +99,18 @@ create index if not exists idx_test_evaluations_turn_id
 
 create index if not exists idx_test_evaluations_verdict
   on public.test_evaluations(verdict);
+
+create index if not exists idx_test_evaluations_status_created_at
+  on public.test_evaluations(status, created_at desc);
+
+create index if not exists idx_test_evaluations_error_category
+  on public.test_evaluations(error_category);
+
+create index if not exists idx_test_evaluations_environment_verdict
+  on public.test_evaluations(environment, verdict, created_at desc);
+
+create index if not exists idx_test_evaluations_metadata_gin
+  on public.test_evaluations using gin (metadata jsonb_path_ops);
 
 drop trigger if exists trg_test_sessions_updated_at on public.test_sessions;
 create trigger trg_test_sessions_updated_at
