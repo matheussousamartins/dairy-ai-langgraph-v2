@@ -668,18 +668,12 @@ async def generate_answer(state: SingleAgentState) -> dict:
     async with NodeTimer("generate_answer"):
         try:
             async with LLMSlot():
-                # max_tokens aumentado para acomodar bloco <raciocinio> (~400 tokens)
-                # mais a resposta tecnica completa (~1200 tokens)
-                llm = _get_llm(state, max_tokens=1800)
+                llm = _get_llm(state)
                 response = await asyncio.wait_for(
                     llm.ainvoke(messages_for_llm),
                     timeout=SINGLE_AGENT_ANSWER_TIMEOUT_SEC,
                 )
-                raw_answer = (response.content or "").strip()
-                # Strip do bloco de raciocinio — o usuario so recebe a resposta final
-                answer = re.sub(r"<raciocinio>.*?</raciocinio>\s*", "", raw_answer, flags=re.DOTALL).strip()
-                if not answer:
-                    answer = raw_answer  # fallback se o strip apagou tudo
+                answer = (response.content or "").strip()
         except asyncio.TimeoutError:
             _log.warning("generate_answer: timeout apos %ss", SINGLE_AGENT_ANSWER_TIMEOUT_SEC)
             answer = "Nao foi possivel gerar uma resposta no tempo esperado. Tente novamente."
