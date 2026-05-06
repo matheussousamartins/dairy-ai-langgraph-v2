@@ -279,6 +279,15 @@ _CLASSIFIER_FEW_SHOTS = [
      '{"dominios": ["queijos", "regulatorios"], "confidence": 0.93}'),
     ("qual padronizacao de leite e indicada para parmesao brasileiro conforme a norma vigente",
      '{"dominios": ["queijos", "regulatorios"], "confidence": 0.91}'),
+    # --- QUEIJOS: planejamento de linha / operacao industrial ---
+    ("antes de implantar uma linha de parmesao o que a fabrica precisa definir para nao misturar logica de queijo ralado com produto de consumo direto",
+     '{"dominios": ["queijos"], "confidence": 0.93}'),
+    ("quais criterios operacionais separam a producao de queijo para uso industrial da producao para consumo direto",
+     '{"dominios": ["queijos"], "confidence": 0.92}'),
+    ("como organizar o fluxo de producao para nao contaminar queijo de mesa com queijo destinado a rala",
+     '{"dominios": ["queijos"], "confidence": 0.93}'),
+    ("quais parametros tecnicos diferenciam a fabricacao de parmesao ralado do parmesao para consumo direto",
+     '{"dominios": ["queijos"], "confidence": 0.94}'),
     # --- REGULATORIOS: norma pura ---
     ("quais instrucoes normativas regulamentam a producao de leite cru refrigerado no brasil",
      '{"dominios": ["regulatorios"], "confidence": 0.98}'),
