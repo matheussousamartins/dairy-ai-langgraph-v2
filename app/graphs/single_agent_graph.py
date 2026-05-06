@@ -623,25 +623,35 @@ async def generate_answer(state: SingleAgentState) -> dict:
 
     question_type = detect_question_type(raw_query)
 
-    specialist_text, specialist_reduction = _reduce_chunks_for_prompt(
-        question=raw_query,
-        chunks=specialist_chunks,
-        agent_id=1,
-    )
-    regulatory_text, regulatory_reduction = _reduce_chunks_for_prompt(
-        question=raw_query,
-        chunks=regulatory_chunks,
-        agent_id=3,
-        max_sentences=3,
-    )
+    # Texto completo dos chunks — LLM recebe tudo, sem filtro de sentenca.
+    # O evidence_reducer era um gargalo: descartava frases relevantes antes
+    # do LLM ver. Como os chunks ja foram rankeados por relevancia no retrieval
+    # e temos max 8 chunks (~6000 chars), o custo de contexto e aceitavel.
+    specialist_text = _format_chunks_as_context(specialist_chunks)
+    regulatory_text = _format_chunks_as_context(regulatory_chunks)
+
+    specialist_reduction = {
+        "agent_id": 1,
+        "input_chunks": len(specialist_chunks),
+        "used_reducer": False,
+        "input_chars": len(specialist_text),
+        "output_chars": len(specialist_text),
+    }
+    regulatory_reduction = {
+        "agent_id": 3,
+        "input_chunks": len(regulatory_chunks),
+        "used_reducer": False,
+        "input_chars": len(regulatory_text),
+        "output_chars": len(regulatory_text),
+    }
 
     log_event("evidence_reduction_complete",
-              specialist_used=specialist_reduction.get("used_reducer", False),
-              specialist_input_chars=specialist_reduction.get("input_chars", 0),
-              specialist_output_chars=specialist_reduction.get("output_chars", 0),
-              regulatory_used=regulatory_reduction.get("used_reducer", False),
-              regulatory_input_chars=regulatory_reduction.get("input_chars", 0),
-              regulatory_output_chars=regulatory_reduction.get("output_chars", 0))
+              specialist_used=False,
+              specialist_input_chars=len(specialist_text),
+              specialist_output_chars=len(specialist_text),
+              regulatory_used=False,
+              regulatory_input_chars=len(regulatory_text),
+              regulatory_output_chars=len(regulatory_text))
 
     human_content = build_synthesis_prompt(
         question=raw_query,
