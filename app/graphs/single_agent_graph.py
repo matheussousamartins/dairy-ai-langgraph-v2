@@ -328,11 +328,19 @@ async def retrieve_context(state: SingleAgentState) -> dict:
 
     async with NodeTimer("retrieve_context"):
         precomputed: Optional[List[float]] = None
+        embedding_failed = False
         if search_type != "text":
             try:
                 precomputed = embed_query(resolved_query)
+                _log.info("retrieve_context: embedding OK — %d dims", len(precomputed) if precomputed else 0)
             except Exception as exc:
-                _log.warning("retrieve_context: falha ao pre-computar embedding: %s", exc)
+                embedding_failed = True
+                _log.error("retrieve_context: FALHA no embedding — fallback para text search: %s", exc, exc_info=True)
+
+        # Se embedding falhou, usa text search como fallback seguro
+        if embedding_failed:
+            search_type = "text"
+            effective_threshold = None
 
         loop = asyncio.get_event_loop()
 
