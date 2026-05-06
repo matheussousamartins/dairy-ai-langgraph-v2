@@ -72,16 +72,19 @@ SYNTHESIS_BASE_RULES: str = (
 
 FORMAT_INSTRUCTIONS: dict[str, str] = {
     QuestionType.FACTUAL_SHORT: (
-        "FORMATO DE SAÍDA: Resposta direta em 1–3 frases. "
-        "O valor ou dado solicitado aparece logo na primeira frase. "
-        "Sem contexto extra além do necessário para entender o dado. "
+        "FORMATO DE SAÍDA: O dado solicitado aparece logo na primeira frase. "
+        "Se o parâmetro vier em faixa (mínimo–ideal–máximo), cite a faixa completa na primeira frase — não apenas um extremo. "
+        "Adicione uma segunda frase de contexto técnico SOMENTE quando a faixa exigir explicação de por que cada limite existe. "
         "Se a pergunta usa 'qual risco', responda apenas o risco e o mecanismo principal; "
-        "não inclua prevenção, formulação alternativa ou plano de controle, salvo se perguntado."
+        "não inclua prevenção, formulação alternativa ou plano de controle, salvo se perguntado. "
+        "Extensão: 1–4 frases no máximo — use o mínimo necessário para cobrir a faixa com contexto."
     ),
     QuestionType.PROCESS: (
         "FORMATO DE SAÍDA: Etapas numeradas em ordem cronológica. "
         "Cada etapa inclui os parâmetros críticos presentes nas evidências "
         "(temperatura, pH, tempo, concentração). "
+        "Quando um parâmetro vier em faixa (ex.: 'filagem: 75–80 °C'), cite a faixa — não apenas o ponto médio. "
+        "Se uma etapa tiver condição causal relevante ('ajuste pH antes de X para evitar Y'), inclua o mecanismo em uma cláusula da mesma linha. "
         "Sem narrativa introdutória — comece diretamente na etapa 1."
     ),
     QuestionType.TROUBLESHOOTING: (
@@ -114,7 +117,9 @@ FORMAT_INSTRUCTIONS: dict[str, str] = {
     QuestionType.GENERAL: (
         "FORMATO DE SAÍDA: Prosa técnica enxuta, normalmente 1–2 parágrafos e no máximo 6 frases. "
         "Comece pela resposta direta à pergunta. "
-        "Adicione contexto técnico das evidências apenas quando for indispensável para explicar a resposta. "
+        "Quando a resposta envolver relações causais entre múltiplos parâmetros (ex.: pH + temperatura + umidade → resultado), "
+        "apresente o mecanismo completo em uma única frase causal — não fragmente em bullet points. "
+        "Se parâmetros vierem em faixas, cite a faixa (mínimo–ideal–máximo) em vez de valor único. "
         "Não acrescente recomendações, prevenção, troubleshooting, formulação alternativa, parâmetros de controle "
         "ou contexto regulatório se a pergunta não pedir isso explicitamente. "
         "Encerre no último dado técnico."
