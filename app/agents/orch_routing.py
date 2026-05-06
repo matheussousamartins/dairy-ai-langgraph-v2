@@ -586,7 +586,7 @@ def _recalibrate_confidence(
 def _apply_dairy_hard_constraints(route_text: str, agent_ids: List[int]) -> List[int]:
     """Aplica o contrato mínimo para perguntas de laticínios.
 
-    Pergunta técnica: especialista ativo primeiro + Agent 3 como complemento.
+    Pergunta técnica: especialista ativo. Agent 3 só entra com sinal regulatório explícito.
     Pergunta puramente legal: Agent 3 sozinho.
     """
     if not agent_ids:
@@ -603,8 +603,14 @@ def _apply_dairy_hard_constraints(route_text: str, agent_ids: List[int]) -> List
         specialist_id = _default_specialist_id()
         if specialist_id is not None:
             out.insert(0, specialist_id)
-    if _REGULATORY_BASELINE_ID not in out:
+
+    # Agent 3 só complementa quando há sinal regulatório explícito.
+    has_regulatory_signal = _is_strong_regulatory_signal(text_norm)
+    if not has_regulatory_signal:
+        out = [aid for aid in out if aid != _REGULATORY_BASELINE_ID]
+    elif _REGULATORY_BASELINE_ID not in out:
         out.append(_REGULATORY_BASELINE_ID)
+
     return _sanitize_agent_ids(out)
 
 
@@ -664,10 +670,13 @@ def _build_execution_plan(
     is_dairy_route = has_dairy_signal or has_specialist or _REGULATORY_BASELINE_ID in chosen
 
     if is_dairy_route:
-        # Agent 3 entra como copiloto em rotas dairy; a evidência dele só
-        # complementa se passar no filtro de relevância do consolidador.
-        if _REGULATORY_BASELINE_ID not in chosen:
+        has_regulatory_signal = _is_strong_regulatory_signal(text_norm)
+
+        # Agent 3 só entra quando há sinal regulatório explícito na pergunta.
+        if has_regulatory_signal and _REGULATORY_BASELINE_ID not in chosen:
             chosen.append(_REGULATORY_BASELINE_ID)
+        elif not has_regulatory_signal:
+            chosen = [aid for aid in chosen if aid != _REGULATORY_BASELINE_ID]
         chosen = _sanitize_agent_ids(chosen)
 
         specialists = [aid for aid in chosen if aid != _REGULATORY_BASELINE_ID]
@@ -690,8 +699,11 @@ def _build_execution_plan(
             max_specialists = 1
 
         selected = specialists[:max_specialists]
-        # Especialista lidera; Agent 3 fecha o plano como complemento.
-        plan = selected + [_REGULATORY_BASELINE_ID] if selected else [_REGULATORY_BASELINE_ID]
+        if has_regulatory_signal:
+            # Especialista lidera; Agent 3 fecha o plano como complemento.
+            plan = selected + [_REGULATORY_BASELINE_ID] if selected else [_REGULATORY_BASELINE_ID]
+        else:
+            plan = selected if selected else []
     else:
         max_agents = _SPECIALISTS_PER_BUCKET.get(bucket, 2)
         plan = (chosen + [aid for aid in alts if aid not in chosen])[:max_agents]
